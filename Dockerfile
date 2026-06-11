@@ -6,7 +6,7 @@ FROM node:20-slim AS frontend
 ENV NODE_ENV=development
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm install -g npm@latest && npm ci --registry https://registry.npmjs.org
+RUN npm install -g npm@latest && npm ci
 COPY frontend/ ./
 RUN npm run build
 
