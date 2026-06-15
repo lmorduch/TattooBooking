@@ -3,6 +3,8 @@
 
 import logging
 import queue as sync_queue
+import random
+import time
 import traceback
 from datetime import datetime, timezone
 from typing import Callable
@@ -74,6 +76,10 @@ def check_all_artists(
                         "done": done,
                         "total": len(artists),
                     })
+                # Pause between artists to stay within Instagram's rate limits.
+                # ~200 req/11min window; we use 2 req/artist, so 4-7s gives ~20-30 req/min headroom.
+                if done < len(artists):
+                    time.sleep(random.uniform(*scraper._INTER_ARTIST_DELAY))
 
         if emit:
             emit({"type": "done", "total": len(artists)})
