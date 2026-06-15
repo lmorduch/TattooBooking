@@ -139,14 +139,13 @@ def check_all_artists(
 def start() -> None:
     _scheduler.add_job(
         check_all_artists,
-        trigger="cron",
-        hour=settings.check_hour,
-        minute=0,
-        id="daily_check",
+        trigger="interval",
+        hours=settings.check_interval_hours,
+        id="timeline_check",
         replace_existing=True,
     )
     _scheduler.start()
-    logger.info("Scheduler started — daily check at %02d:00 UTC", settings.check_hour)
+    logger.info("Scheduler started — timeline check every %dh", settings.check_interval_hours)
 
 
 def stop() -> None:

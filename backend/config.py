@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     instagram_username: str = ""
     instagram_password: str = ""
 
-    # UTC hour (0-23) to run the daily check
-    check_hour: int = 9
+    # How often to run the timeline check (in hours)
+    check_interval_hours: int = 2
 
     class Config:
         env_file = ".env"
