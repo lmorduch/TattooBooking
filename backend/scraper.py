@@ -140,40 +140,70 @@ def _find_keywords(text: str) -> str | None:
     return None
 
 
-def check_artist(handle: str, session_cookie: str = "", user_agent: str = "") -> dict[str, Any]:
+def _resolve_user_id(s: requests.Session, handle: str) -> tuple[str | None, str]:
+    """
+    Resolves handle → (instagram_user_id, biography) via web_profile_info.
+    Returns (None, "") on failure. Only called once per artist lifetime.
+    """
+    resp = _ig_get(
+        s,
+        "https://i.instagram.com/api/v1/users/web_profile_info/",
+        params={"username": handle},
+    )
+    if resp.status_code == 429:
+        raise requests.HTTPError(response=resp)
+    if resp.status_code == 404:
+        return None, ""
+    resp.raise_for_status()
+    user = (resp.json().get("data") or {}).get("user") or resp.json().get("user") or {}
+    uid = user.get("id") or user.get("pk")
+    bio = user.get("biography") or ""
+    return (str(uid) if uid else None), bio
+
+
+def check_artist(
+    handle: str,
+    session_cookie: str = "",
+    user_agent: str = "",
+    instagram_user_id: str | None = None,
+) -> dict[str, Any]:
     """
     Returns:
-      {"status": "ok", "hits": []}
-      {"status": "hit", "hits": [{"keyword": ..., "post_url": ..., "caption_snippet": ...}]}
-      {"status": "error", "error": "...", "breakage": True|False}
-    breakage=True means Instagram is blocking us (not a transient network issue).
-    Uses the private mobile API — instaloader's GraphQL is broken.
+      {"status": "ok"|"hit"|"error", "hits": [...], "error": "...",
+       "breakage": bool, "instagram_user_id": str|None}
+    instagram_user_id is populated when newly resolved so the caller can persist it.
+    breakage=True means the session is invalid/banned (not a transient issue).
     """
     if not session_cookie:
-        return {"status": "error", "error": "Instagram session required", "breakage": True}
+        return {"status": "error", "error": "Instagram session required", "breakage": True, "instagram_user_id": None}
 
     s = get_ig_session(session_cookie)
     hits = []
+    resolved_user_id = instagram_user_id
 
     try:
-        resp = _ig_get(
-            s,
-            "https://i.instagram.com/api/v1/users/web_profile_info/",
-            params={"username": handle},
-        )
-        if resp.status_code == 404:
-            return {"status": "error", "error": f"Profile @{handle} not found", "breakage": True}
-        if resp.status_code == 429:
-            return {"status": "error", "error": "Still rate limited after backoff", "breakage": False}
-        resp.raise_for_status()
-        data = resp.json()
-        user = (data.get("data") or {}).get("user") or data.get("user") or {}
+        bio = ""
 
-        if not user:
-            return {"status": "error", "error": f"Profile @{handle} not found", "breakage": True}
+        if not resolved_user_id:
+            # First time seeing this artist — resolve via web_profile_info (only once ever).
+            resolved_user_id, bio = _resolve_user_id(s, handle)
+            if resolved_user_id is None:
+                return {
+                    "status": "error",
+                    "error": f"Profile @{handle} not found",
+                    "breakage": True,
+                    "instagram_user_id": None,
+                }
+            time.sleep(random.uniform(*_INTER_REQUEST_DELAY))
+        else:
+            # We have the user_id — use the pure mobile endpoint, no web calls.
+            info = _ig_get(s, f"https://i.instagram.com/api/v1/users/{resolved_user_id}/info/")
+            if info.status_code == 429:
+                raise requests.HTTPError(response=info)
+            info.raise_for_status()
+            bio = (info.json().get("user") or {}).get("biography") or ""
+            time.sleep(random.uniform(*_INTER_REQUEST_DELAY))
 
-        user_id = user.get("id") or user.get("pk")
-        bio = user.get("biography") or ""
         bio_kw = _find_keywords(bio)
         if bio_kw:
             hits.append({
@@ -182,45 +212,40 @@ def check_artist(handle: str, session_cookie: str = "", user_agent: str = "") ->
                 "caption_snippet": bio[:200],
             })
 
-        # Brief pause between the two requests for this artist
-        time.sleep(random.uniform(*_INTER_REQUEST_DELAY))
-
-        if user_id:
-            feed = _ig_get(
-                s,
-                f"https://i.instagram.com/api/v1/feed/user/{user_id}/",
-                params={"count": 12},
-            )
-            if resp.status_code == 429:
-                return {"status": "error", "error": "Still rate limited after backoff", "breakage": False}
-            feed.raise_for_status()
-            for item in (feed.json().get("items") or [])[:12]:
-                cap_obj = item.get("caption") or {}
-                caption = cap_obj.get("text") or ""
-                kw = _find_keywords(caption)
-                if kw:
-                    code = item.get("code") or item.get("shortcode") or ""
-                    hits.append({
-                        "keyword": kw,
-                        "post_url": f"https://www.instagram.com/p/{code}/",
-                        "caption_snippet": caption[:200],
-                    })
+        feed = _ig_get(
+            s,
+            f"https://i.instagram.com/api/v1/feed/user/{resolved_user_id}/",
+            params={"count": 12},
+        )
+        if feed.status_code == 429:
+            raise requests.HTTPError(response=feed)
+        feed.raise_for_status()
+        for item in (feed.json().get("items") or [])[:12]:
+            cap_obj = item.get("caption") or {}
+            caption = cap_obj.get("text") or ""
+            kw = _find_keywords(caption)
+            if kw:
+                code = item.get("code") or item.get("shortcode") or ""
+                hits.append({
+                    "keyword": kw,
+                    "post_url": f"https://www.instagram.com/p/{code}/",
+                    "caption_snippet": caption[:200],
+                })
 
     except requests.HTTPError as e:
         status = e.response.status_code if e.response is not None else 0
         if status in (401, 403):
-            # Session is dead — drop it so the next run rebuilds
             invalidate_ig_session(session_cookie)
-            return {"status": "error", "error": "Instagram session expired or invalid", "breakage": True}
+            return {"status": "error", "error": "Instagram session expired or invalid", "breakage": True, "instagram_user_id": resolved_user_id}
         if status == 429:
-            return {"status": "error", "error": "Rate limited by Instagram", "breakage": False}
-        return {"status": "error", "error": f"HTTP {status}: {e}", "breakage": False}
+            return {"status": "error", "error": "Rate limited — try again later", "breakage": False, "instagram_user_id": resolved_user_id, "rate_limited": True}
+        return {"status": "error", "error": f"HTTP {status}: {e}", "breakage": False, "instagram_user_id": resolved_user_id}
     except requests.Timeout:
-        return {"status": "error", "error": "Request timed out", "breakage": False}
+        return {"status": "error", "error": "Request timed out", "breakage": False, "instagram_user_id": resolved_user_id}
     except Exception as e:
-        return {"status": "error", "error": str(e), "breakage": False}
+        return {"status": "error", "error": str(e), "breakage": False, "instagram_user_id": resolved_user_id}
 
-    return {"status": "hit" if hits else "ok", "hits": hits}
+    return {"status": "hit" if hits else "ok", "hits": hits, "instagram_user_id": resolved_user_id}
 
 
 def _user_id_from_cookie(session_cookie: str) -> str:

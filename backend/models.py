@@ -30,6 +30,7 @@ class Artist(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     handle: Mapped[str] = mapped_column(String, nullable=False)
+    instagram_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # 'pending' | 'ok' | 'hit' | 'error'

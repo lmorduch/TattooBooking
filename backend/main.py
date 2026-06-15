@@ -30,6 +30,7 @@ def _run_migrations() -> None:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_password VARCHAR"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_session_cookie VARCHAR"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_user_agent VARCHAR"))
+        conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS instagram_user_id VARCHAR"))
         conn.commit()
 
 

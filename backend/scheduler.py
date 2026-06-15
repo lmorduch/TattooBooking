@@ -61,11 +61,19 @@ def check_all_artists(
                     user_agent = user.instagram_user_agent or ""
                 except Exception:
                     pass
+            rate_limited = False
             for artist in user_artist_list:
+                if rate_limited:
+                    break
                 if emit:
                     emit({"type": "checking", "handle": artist.handle, "done": done, "total": len(artists)})
                 result = _check_one(db, artist, session_cookie, user_agent)
                 done += 1
+                if result.get("rate_limited"):
+                    rate_limited = True
+                    if emit:
+                        emit({"type": "error", "message": "Instagram rate limit hit — try again in a few minutes"})
+                    break
                 if emit:
                     emit({
                         "type": "result",
@@ -77,7 +85,7 @@ def check_all_artists(
                         "total": len(artists),
                     })
                 # Pause between artists to stay within Instagram's rate limits.
-                # ~200 req/11min window; we use 2 req/artist, so 4-7s gives ~20-30 req/min headroom.
+                # ~200 req/11min window; we use 2 req/artist at 4-7s = safe headroom.
                 if done < len(artists):
                     time.sleep(random.uniform(*scraper._INTER_ARTIST_DELAY))
 
@@ -96,7 +104,13 @@ def check_all_artists(
 
 def _check_one(db: Session, artist: models.Artist, session_cookie: str = "", user_agent: str = "") -> dict:
     logger.info("Checking @%s", artist.handle)
-    result = scraper.check_artist(artist.handle, session_cookie, user_agent)
+    result = scraper.check_artist(
+        artist.handle, session_cookie, user_agent,
+        instagram_user_id=artist.instagram_user_id,
+    )
+    # Persist the user_id if we just resolved it for the first time
+    if result.get("instagram_user_id") and not artist.instagram_user_id:
+        artist.instagram_user_id = result["instagram_user_id"]
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     artist.last_checked_at = now
