@@ -17,10 +17,17 @@ from sqlalchemy.orm import Session
 import models
 import scheduler
 from auth import COOKIE_NAME, FRONTEND_URL, exchange_code, get_current_user, login_url, make_jwt
+from crypto import decrypt, encrypt
 from database import Base, engine, get_db
 from routers import artists
 
 Base.metadata.create_all(bind=engine)
+
+with engine.connect() as _conn:
+    from sqlalchemy import text
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_username VARCHAR"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_password VARCHAR"))
+    _conn.commit()
 
 
 @asynccontextmanager
@@ -93,6 +100,38 @@ def auth_me(current_user: dict = Depends(get_current_user), db: Session = Depend
         "email": user.email,
         "name": user.name,
         "picture": user.picture,
+        "has_instagram": bool(user.instagram_username and user.instagram_password),
+        "instagram_username": user.instagram_username,
+    }
+
+
+class _MeUpdate(BaseModel):
+    instagram_username: str | None = None
+    instagram_password: str | None = None
+
+
+@app.put("/auth/me")
+def update_me(
+    body: _MeUpdate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from fastapi import HTTPException
+    user = db.get(models.User, current_user["user_id"])
+    if not user:
+        raise HTTPException(404, "User not found")
+    if body.instagram_username is not None:
+        user.instagram_username = body.instagram_username or None
+    if body.instagram_password is not None:
+        user.instagram_password = encrypt(body.instagram_password) if body.instagram_password else None
+    db.commit()
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "picture": user.picture,
+        "has_instagram": bool(user.instagram_username and user.instagram_password),
+        "instagram_username": user.instagram_username,
     }
 
 

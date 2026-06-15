@@ -29,29 +29,42 @@ KEYWORDS = [
     "walk ins welcome",
 ]
 
-# Module-level loader — reuses the session across calls to avoid re-login overhead
+# Module-level loader — reuses the session across calls to avoid re-login overhead.
+# Keyed by username so we get a fresh loader if credentials change.
 _loader: instaloader.Instaloader | None = None
+_loader_username: str | None = None
 
 
-def _get_loader() -> instaloader.Instaloader:
-    global _loader
-    if _loader is None:
-        _loader = instaloader.Instaloader(
-            download_pictures=False,
-            download_videos=False,
-            download_video_thumbnails=False,
-            download_geotags=False,
-            download_comments=False,
-            save_metadata=False,
-            compress_json=False,
-            quiet=True,
-        )
-        if settings.instagram_username and settings.instagram_password:
+def _make_loader() -> instaloader.Instaloader:
+    return instaloader.Instaloader(
+        download_pictures=False,
+        download_videos=False,
+        download_video_thumbnails=False,
+        download_geotags=False,
+        download_comments=False,
+        save_metadata=False,
+        compress_json=False,
+        quiet=True,
+    )
+
+
+def _get_loader(username: str = "", password: str = "") -> instaloader.Instaloader:
+    global _loader, _loader_username
+
+    # Use env-var creds as fallback
+    username = username or settings.instagram_username
+    password = password or settings.instagram_password
+
+    if _loader is None or _loader_username != username:
+        _loader = _make_loader()
+        _loader_username = username
+        if username and password:
             try:
-                _loader.login(settings.instagram_username, settings.instagram_password)
-                logger.info("Logged into Instagram as %s", settings.instagram_username)
+                _loader.login(username, password)
+                logger.info("Logged into Instagram as %s", username)
             except Exception as e:
                 logger.warning("Instagram login failed: %s", e)
+
     return _loader
 
 
@@ -118,3 +131,17 @@ def check_artist(handle: str) -> dict[str, Any]:
         return {"status": "error", "error": str(e), "breakage": False}
 
     return {"status": "hit" if hits else "ok", "hits": hits}
+
+
+def import_following(username: str, password: str) -> list[str]:
+    """
+    Returns list of handles that the given account follows.
+    Raises on auth failure or other errors.
+    """
+    L = _get_loader(username, password)
+    profile = instaloader.Profile.from_username(L.context, username)
+    handles = []
+    for followee in profile.get_followees():
+        handles.append(followee.username)
+        time.sleep(0.3)
+    return handles

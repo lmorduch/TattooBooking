@@ -7,5 +7,6 @@ pydantic-settings==2.6.1
 python-dotenv==1.0.1
 httpx==0.28.1
 PyJWT==2.10.1
+cryptography>=42.0.0
 instaloader==4.13.1
 APScheduler==3.10.4

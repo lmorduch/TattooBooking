@@ -1,9 +1,11 @@
-// ABOUTME: Root app component - handles auth state and renders the main page.
+// ABOUTME: Root app component - handles auth state and renders nav + routes.
 // ABOUTME: Shows login screen when unauthenticated.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { NavLink, Route, Routes } from "react-router-dom";
 import { getMe, logout, type User } from "./api";
 import ArtistsPage from "./pages/ArtistsPage";
+import SettingsPage from "./pages/SettingsPage";
 
 function UserAvatar({ user }: { user: User }) {
   if (user.picture) {
@@ -54,14 +56,19 @@ export default function App() {
     <div className="app">
       <nav className="nav">
         <span className="nav-brand">🎨 Tattoo Tracker</span>
+        <NavLink to="/" end className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>Artists</NavLink>
+        <NavLink to="/settings" className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>Settings</NavLink>
         <span className="nav-spacer" />
         <button className="btn-ghost" onClick={handleLogout}>Logout</button>
-        <button className="nav-user" title={user.name} onClick={handleLogout} style={{ cursor: "default" }}>
+        <span className="nav-user" title={user.name}>
           <UserAvatar user={user} />
-        </button>
+        </span>
       </nav>
       <main className="main">
-        <ArtistsPage />
+        <Routes>
+          <Route path="/" element={<ArtistsPage />} />
+          <Route path="/settings" element={<SettingsPage user={user} />} />
+        </Routes>
       </main>
     </div>
   );

@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 import models
 import scheduler
+import scraper
 from auth import get_current_user
+from crypto import decrypt
 from database import get_db
 
 router = APIRouter(prefix="/artists", tags=["artists"])
@@ -144,3 +146,40 @@ def trigger_check(current_user: dict = Depends(get_current_user)):
     """Manually kick off a check run in the background."""
     scheduler.trigger_now()
     return {"message": "Check run started"}
+
+
+class ImportResult(BaseModel):
+    added: int
+    skipped: int
+
+
+@router.post("/import", response_model=ImportResult)
+def import_from_instagram(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user = db.get(models.User, current_user["user_id"])
+    if not user or not user.instagram_username or not user.instagram_password:
+        raise HTTPException(400, "Instagram credentials not configured. Go to Settings first.")
+
+    password = decrypt(user.instagram_password)
+
+    try:
+        handles = scraper.import_following(user.instagram_username, password)
+    except Exception as e:
+        raise HTTPException(502, f"Failed to fetch Instagram following list: {e}")
+
+    added = 0
+    skipped = 0
+    for handle in handles:
+        existing = db.query(models.Artist).filter_by(
+            user_id=current_user["user_id"], handle=handle
+        ).first()
+        if existing:
+            skipped += 1
+        else:
+            db.add(models.Artist(user_id=current_user["user_id"], handle=handle))
+            added += 1
+
+    db.commit()
+    return ImportResult(added=added, skipped=skipped)

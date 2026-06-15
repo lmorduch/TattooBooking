@@ -12,6 +12,8 @@ export interface User {
   email: string;
   name: string;
   picture: string | null;
+  has_instagram: boolean;
+  instagram_username: string | null;
 }
 
 export interface Artist {
@@ -69,4 +71,14 @@ export async function getChecks(artistId: number): Promise<CheckResult[]> {
 
 export async function triggerRun(): Promise<void> {
   await api.post("/artists/run");
+}
+
+export async function saveInstagramCreds(username: string, password: string): Promise<User> {
+  const r = await api.put<User>("/auth/me", { instagram_username: username, instagram_password: password });
+  return r.data;
+}
+
+export async function importFromInstagram(): Promise<{ added: number; skipped: number }> {
+  const r = await api.post<{ added: number; skipped: number }>("/artists/import");
+  return r.data;
 }
