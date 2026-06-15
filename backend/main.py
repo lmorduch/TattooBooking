@@ -22,18 +22,22 @@ from crypto import decrypt, encrypt
 from database import Base, engine, get_db
 from routers import artists
 
-Base.metadata.create_all(bind=engine)
-
-with engine.connect() as _conn:
+def _run_migrations() -> None:
     from sqlalchemy import text
-    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_username VARCHAR"))
-    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_password VARCHAR"))
-    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_session_cookie VARCHAR"))
-    _conn.commit()
+    Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_username VARCHAR"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_password VARCHAR"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_session_cookie VARCHAR"))
+        conn.commit()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import threading
+    # Run DB migration in background so uvicorn can start serving /health immediately.
+    # On existing deployments these are all IF NOT EXISTS no-ops and complete in milliseconds.
+    threading.Thread(target=_run_migrations, daemon=True).start()
     scheduler.start()
     yield
     scheduler.stop()

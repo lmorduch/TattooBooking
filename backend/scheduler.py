@@ -12,6 +12,7 @@ import models
 import notifier
 import scraper
 from config import settings
+from crypto import decrypt
 from database import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -29,8 +30,21 @@ def check_all_artists() -> None:
         artists = db.query(models.Artist).filter_by(active=True).all()
         logger.info("Checking %d active artists", len(artists))
 
+        # Group artists by user so we can use each user's session cookie
+        user_artists: dict[int, list[models.Artist]] = {}
         for artist in artists:
-            _check_one(db, artist)
+            user_artists.setdefault(artist.user_id, []).append(artist)
+
+        for user_id, user_artist_list in user_artists.items():
+            user = db.get(models.User, user_id)
+            session_cookie = ""
+            if user and user.instagram_session_cookie:
+                try:
+                    session_cookie = decrypt(user.instagram_session_cookie)
+                except Exception:
+                    pass
+            for artist in user_artist_list:
+                _check_one(db, artist, session_cookie)
 
     except Exception as e:
         logger.error("Scheduler run failed: %s", traceback.format_exc())
@@ -40,9 +54,9 @@ def check_all_artists() -> None:
         logger.info("Daily check run complete")
 
 
-def _check_one(db: Session, artist: models.Artist) -> None:
+def _check_one(db: Session, artist: models.Artist, session_cookie: str = "") -> None:
     logger.info("Checking @%s", artist.handle)
-    result = scraper.check_artist(artist.handle)
+    result = scraper.check_artist(artist.handle, session_cookie)
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     artist.last_checked_at = now
