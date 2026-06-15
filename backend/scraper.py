@@ -248,6 +248,71 @@ def _user_id_from_cookie(session_cookie: str) -> str:
     return session_cookie.split("%")[0].split(":")[0]
 
 
+def iter_timeline_posts(session_cookie: str, hours_back: int = 26):
+    """
+    Yields recent posts from the user's following feed via the timeline endpoint.
+    Stops when posts are older than hours_back hours.
+    Each yielded item: {"username", "caption", "post_url", "taken_at"}
+    """
+    import time as _time
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+    s = get_ig_session(session_cookie)
+    max_id = None
+
+    while True:
+        data = {"reason": "cold_start" if max_id is None else "pagination"}
+        if max_id:
+            data["max_id"] = max_id
+
+        resp = s.post(
+            "https://i.instagram.com/api/v1/feed/timeline/",
+            data=data,
+            timeout=30,
+        )
+        if resp.status_code == 429:
+            raise requests.HTTPError(response=resp)
+        resp.raise_for_status()
+        body = resp.json()
+
+        items = body.get("feed_items") or body.get("items") or []
+        if not items:
+            break
+
+        any_in_range = False
+        for item in items:
+            media = item.get("media_or_ad") or item
+            taken_at = media.get("taken_at") or 0
+            post_time = datetime.fromtimestamp(taken_at, tz=timezone.utc)
+            if post_time < cutoff:
+                continue
+            any_in_range = True
+            user = media.get("user") or {}
+            username = user.get("username") or ""
+            cap_obj = media.get("caption") or {}
+            caption = cap_obj.get("text") or "" if isinstance(cap_obj, dict) else ""
+            code = media.get("code") or ""
+            yield {
+                "username": username,
+                "caption": caption,
+                "post_url": f"https://www.instagram.com/p/{code}/" if code else "",
+                "taken_at": post_time,
+            }
+
+        # Stop if the oldest item on this page is already past cutoff
+        last = items[-1]
+        last_media = last.get("media_or_ad") or last
+        last_taken = last_media.get("taken_at") or 0
+        if datetime.fromtimestamp(last_taken, tz=timezone.utc) < cutoff:
+            break
+
+        max_id = body.get("next_max_id")
+        if not max_id:
+            break
+
+        _time.sleep(random.uniform(1.0, 2.0))
+
+
 def iter_following(session_cookie: str):
     """
     Yields (username, total) tuples where total is from the first page.
