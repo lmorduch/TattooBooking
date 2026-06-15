@@ -78,7 +78,7 @@ def check_all_artists(
                         emit({
                             "type": "scanning",
                             "handle": post["username"],
-                            "taken_at": post["taken_at"].isoformat(),
+                            "taken_at": post["taken_at"].strftime("%Y-%m-%dT%H:%M:%SZ"),
                             "caption_snippet": post["caption"][:80].strip(),
                         })
                     handle = post["username"]
@@ -146,7 +146,7 @@ def check_all_artists(
             if emit:
                 done_event: dict = {"type": "done", "total": len(artists_by_handle)}
                 if oldest_post:
-                    done_event["scanned_to"] = oldest_post["taken_at"].isoformat()
+                    done_event["scanned_to"] = oldest_post["taken_at"].strftime("%Y-%m-%dT%H:%M:%SZ")
                     done_event["scanned_to_handle"] = oldest_post["username"]
                     done_event["scanned_to_preview"] = oldest_post["caption"][:120].strip()
                 emit(done_event)

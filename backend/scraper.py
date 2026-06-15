@@ -248,7 +248,7 @@ def _user_id_from_cookie(session_cookie: str) -> str:
     return session_cookie.split("%")[0].split(":")[0]
 
 
-def iter_timeline_posts(session_cookie: str, hours_back: int = 3):
+def iter_timeline_posts(session_cookie: str, hours_back: int = 48):
     """
     Yields recent posts from the user's following feed via the timeline endpoint.
     Stops when posts are older than hours_back hours.
