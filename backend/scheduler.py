@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 _scheduler = BackgroundScheduler()
 
 BREAKAGE_THRESHOLD = 3
+BATCH_SIZE = 40  # artists per run — keeps each run within Instagram's rate limit window
 
 
 def check_all_artists(
@@ -37,10 +38,14 @@ def check_all_artists(
     logger.info("Starting daily check run")
     db: Session = SessionLocal()
     try:
-        q = db.query(models.Artist).filter_by(active=True)
+        q = (
+            db.query(models.Artist)
+            .filter_by(active=True)
+            .order_by(models.Artist.last_checked_at.asc().nulls_first())
+        )
         if user_id_filter is not None:
             q = q.filter_by(user_id=user_id_filter)
-        artists = q.all()
+        artists = q.limit(BATCH_SIZE).all()
         logger.info("Checking %d active artists", len(artists))
 
         if emit:

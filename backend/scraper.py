@@ -82,13 +82,8 @@ def invalidate_ig_session(session_cookie: str) -> None:
 
 
 def _ig_get(s: requests.Session, url: str, **kwargs) -> requests.Response:
-    """GET with one automatic retry after _RATE_LIMIT_BACKOFF seconds on 429."""
-    resp = s.get(url, **kwargs)
-    if resp.status_code == 429:
-        logger.warning("Rate limited by Instagram — backing off %ds before retry", _RATE_LIMIT_BACKOFF)
-        time.sleep(_RATE_LIMIT_BACKOFF)
-        resp = s.get(url, **kwargs)
-    return resp
+    """GET with no automatic retry — 429 propagates immediately for the caller to handle."""
+    return s.get(url, **kwargs)
 
 
 # Module-level loader for verify_session_cookie (still uses instaloader's test_login).
