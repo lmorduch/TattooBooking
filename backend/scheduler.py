@@ -61,7 +61,7 @@ def check_all_artists(
                 continue
 
             if emit:
-                emit({"type": "start", "total": len(artists_by_handle)})
+                emit({"type": "start", "watching": len(artists_by_handle)})
 
             # hits_by_handle: handle -> list of hit dicts
             hits_by_handle: dict[str, list[dict]] = {}
@@ -112,11 +112,11 @@ def check_all_artists(
                     db.commit()
 
                 done += 1
-                if emit:
+                if emit and hits:
                     emit({
                         "type": "result",
                         "handle": handle,
-                        "status": artist.last_status,
+                        "status": "hit",
                         "hits": hits,
                         "error": None,
                         "done": done,

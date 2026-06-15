@@ -70,13 +70,12 @@ export async function getChecks(artistId: number): Promise<CheckResult[]> {
 }
 
 export interface CheckEvent {
-  type: "start" | "checking" | "result" | "done" | "error";
+  type: "start" | "result" | "done" | "error";
   handle?: string;
-  status?: "ok" | "hit" | "error";
+  status?: "hit" | "error";
   hits?: Array<{ keyword: string; post_url?: string; caption_snippet?: string }>;
   error?: string;
-  done?: number;
-  total?: number;
+  watching?: number;
   message?: string;
 }
 

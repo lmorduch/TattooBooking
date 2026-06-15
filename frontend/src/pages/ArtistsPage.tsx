@@ -15,6 +15,8 @@ import {
   type CheckResult,
 } from "../api";
 
+type HitEntry = { handle: string; hits: NonNullable<CheckEvent["hits"]> };
+
 function statusLabel(status: Artist["last_status"]) {
   switch (status) {
     case "hit": return "📬 Books may be open";
@@ -34,62 +36,46 @@ function formatDate(iso: string | null) {
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-// ── Live check feed ──────────────────────────────────────────────────────────
+// ── Feed scan result panel ────────────────────────────────────────────────────
 
-interface FeedEntry {
-  handle: string;
-  status: "checking" | "ok" | "hit" | "error";
-  hits?: CheckEvent["hits"];
-  error?: string;
-}
-
-function CheckFeed({
-  entries,
-  done,
-  total,
+function ScanResult({
+  hits,
+  watching,
   isRunning,
   onClose,
 }: {
-  entries: FeedEntry[];
-  done: number;
-  total: number;
+  hits: HitEntry[];
+  watching: number;
   isRunning: boolean;
   onClose: () => void;
 }) {
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-
   return (
     <div className="check-feed">
       <div className="check-feed-header">
         <span className="check-feed-title">
-          {isRunning ? `Checking… ${done} / ${total}` : `Done — ${done} checked`}
+          {isRunning
+            ? `Scanning feed… (watching ${watching} artists)`
+            : hits.length > 0
+              ? `Found ${hits.length} artist${hits.length === 1 ? "" : "s"} with booking posts`
+              : "Feed scanned — no booking posts found"}
         </span>
         {!isRunning && (
           <button className="btn-ghost" onClick={onClose}>Dismiss</button>
         )}
       </div>
 
-      {isRunning && (
-        <div className="import-progress-bar-track" style={{ margin: "0 0 0.75rem" }}>
-          <div className="import-progress-bar-fill" style={{ width: `${pct}%` }} />
+      {hits.length > 0 && (
+        <div className="feed-entries">
+          {hits.map((e, i) => (
+            <div key={i} className="feed-entry">
+              <span className="feed-handle">@{e.handle}</span>
+              <span className="feed-status hit">
+                📬 {e.hits.map(h => `"${h.keyword}"`).join(", ")}
+              </span>
+            </div>
+          ))}
         </div>
       )}
-
-      <div className="feed-entries">
-        {entries.map((e, i) => (
-          <div key={i} className={`feed-entry feed-entry-${e.status}`}>
-            <span className="feed-handle">@{e.handle}</span>
-            {e.status === "checking" && <span className="feed-status muted">checking…</span>}
-            {e.status === "ok" && <span className="feed-status ok">✓ clear</span>}
-            {e.status === "error" && <span className="feed-status error">⚠ {e.error}</span>}
-            {e.status === "hit" && (
-              <span className="feed-status hit">
-                📬 {e.hits?.map(h => `"${h.keyword}"`).join(", ")}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -192,11 +178,10 @@ export default function ArtistsPage() {
   const [handle, setHandle] = useState("");
   const [addError, setAddError] = useState("");
 
-  const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([]);
-  const [feedDone, setFeedDone] = useState(0);
-  const [feedTotal, setFeedTotal] = useState(0);
+  const [scanHits, setScanHits] = useState<HitEntry[]>([]);
+  const [watching, setWatching] = useState(0);
   const [isChecking, setIsChecking] = useState(false);
-  const [showFeed, setShowFeed] = useState(false);
+  const [showScan, setShowScan] = useState(false);
   const [checkError, setCheckError] = useState("");
 
   const { data: artists, isLoading } = useQuery<Artist[]>({
@@ -225,31 +210,18 @@ export default function ArtistsPage() {
   }
 
   function startCheck() {
-    setFeedEntries([]);
-    setFeedDone(0);
-    setFeedTotal(0);
+    setScanHits([]);
+    setWatching(0);
     setCheckError("");
     setIsChecking(true);
-    setShowFeed(true);
+    setShowScan(true);
 
     streamCheck(
       (event) => {
         if (event.type === "start") {
-          setFeedTotal(event.total ?? 0);
-        } else if (event.type === "checking") {
-          setFeedEntries((prev) => [
-            { handle: event.handle!, status: "checking" },
-            ...prev,
-          ]);
-        } else if (event.type === "result") {
-          setFeedDone((n) => n + 1);
-          setFeedEntries((prev) =>
-            prev.map((e) =>
-              e.handle === event.handle && e.status === "checking"
-                ? { handle: event.handle!, status: event.status!, hits: event.hits, error: event.error }
-                : e
-            )
-          );
+          setWatching(event.watching ?? 0);
+        } else if (event.type === "result" && event.status === "hit") {
+          setScanHits((prev) => [...prev, { handle: event.handle!, hits: event.hits ?? [] }]);
         }
       },
       () => {
@@ -274,13 +246,12 @@ export default function ArtistsPage() {
 
       {checkError && <div className="error-msg" style={{ marginBottom: "1rem" }}>{checkError}</div>}
 
-      {showFeed && (
-        <CheckFeed
-          entries={feedEntries}
-          done={feedDone}
-          total={feedTotal}
+      {showScan && (
+        <ScanResult
+          hits={scanHits}
+          watching={watching}
           isRunning={isChecking}
-          onClose={() => setShowFeed(false)}
+          onClose={() => setShowScan(false)}
         />
       )}
 
