@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import Depends, FastAPI, Response
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
