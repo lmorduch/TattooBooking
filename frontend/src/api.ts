@@ -69,8 +69,34 @@ export async function getChecks(artistId: number): Promise<CheckResult[]> {
   return r.data;
 }
 
-export async function triggerRun(): Promise<void> {
-  await api.post("/artists/run");
+export interface CheckEvent {
+  type: "start" | "checking" | "result" | "done" | "error";
+  handle?: string;
+  status?: "ok" | "hit" | "error";
+  hits?: Array<{ keyword: string; post_url?: string; caption_snippet?: string }>;
+  error?: string;
+  done?: number;
+  total?: number;
+  message?: string;
+}
+
+export function streamCheck(
+  onEvent: (e: CheckEvent) => void,
+  onDone: () => void,
+  onError: (msg: string) => void,
+): () => void {
+  const base = import.meta.env.VITE_API_URL ?? "";
+  const es = new EventSource(`${base}/artists/check/stream`, { withCredentials: true });
+
+  es.onmessage = (e) => {
+    const event = JSON.parse(e.data) as CheckEvent;
+    if (event.type === "done") { es.close(); onEvent(event); onDone(); }
+    else if (event.type === "error") { es.close(); onError(event.message ?? "Check failed"); }
+    else { onEvent(event); }
+  };
+
+  es.onerror = () => { es.close(); onError("Connection lost"); };
+  return () => es.close();
 }
 
 export async function saveInstagramCreds(sessionCookie: string): Promise<User> {

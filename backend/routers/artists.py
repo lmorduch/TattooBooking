@@ -149,9 +149,31 @@ def get_checks(
 
 @router.post("/run", status_code=202)
 def trigger_check(current_user: dict = Depends(get_current_user)):
-    """Manually kick off a check run in the background."""
     scheduler.trigger_now()
     return {"message": "Check run started"}
+
+
+@router.get("/check/stream")
+async def check_stream(
+    current_user: dict = Depends(get_current_user),
+):
+    q = scheduler.stream_check(current_user["user_id"])
+
+    async def generate():
+        loop = asyncio.get_event_loop()
+        while True:
+            try:
+                event = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: q.get(timeout=15)),
+                    timeout=20,
+                )
+                yield {"data": json.dumps(event)}
+                if event.get("type") in ("done", "error"):
+                    break
+            except (asyncio.TimeoutError, __import__("queue").Empty):
+                yield {"comment": "ping"}
+
+    return EventSourceResponse(generate(), ping=20)
 
 
 @router.get("/import/stream")

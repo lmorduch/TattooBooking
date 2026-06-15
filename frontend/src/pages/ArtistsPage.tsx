@@ -1,5 +1,5 @@
 // ABOUTME: Main page — manage tracked artists and view check history.
-// ABOUTME: Add/remove artists, toggle active, expand rows for check history.
+// ABOUTME: Add/remove artists, toggle active, live check run feed.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -8,9 +8,10 @@ import {
   deleteArtist,
   getChecks,
   listArtists,
+  streamCheck,
   toggleArtist,
-  triggerRun,
   type Artist,
+  type CheckEvent,
   type CheckResult,
 } from "../api";
 
@@ -32,6 +33,68 @@ function formatDate(iso: string | null) {
   const d = new Date(iso + (iso.endsWith("Z") ? "" : "Z"));
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+
+// ── Live check feed ──────────────────────────────────────────────────────────
+
+interface FeedEntry {
+  handle: string;
+  status: "checking" | "ok" | "hit" | "error";
+  hits?: CheckEvent["hits"];
+  error?: string;
+}
+
+function CheckFeed({
+  entries,
+  done,
+  total,
+  isRunning,
+  onClose,
+}: {
+  entries: FeedEntry[];
+  done: number;
+  total: number;
+  isRunning: boolean;
+  onClose: () => void;
+}) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  return (
+    <div className="check-feed">
+      <div className="check-feed-header">
+        <span className="check-feed-title">
+          {isRunning ? `Checking… ${done} / ${total}` : `Done — ${done} checked`}
+        </span>
+        {!isRunning && (
+          <button className="btn-ghost" onClick={onClose}>Dismiss</button>
+        )}
+      </div>
+
+      {isRunning && (
+        <div className="import-progress-bar-track" style={{ margin: "0 0 0.75rem" }}>
+          <div className="import-progress-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+
+      <div className="feed-entries">
+        {entries.map((e, i) => (
+          <div key={i} className={`feed-entry feed-entry-${e.status}`}>
+            <span className="feed-handle">@{e.handle}</span>
+            {e.status === "checking" && <span className="feed-status muted">checking…</span>}
+            {e.status === "ok" && <span className="feed-status ok">✓ clear</span>}
+            {e.status === "error" && <span className="feed-status error">⚠ {e.error}</span>}
+            {e.status === "hit" && (
+              <span className="feed-status hit">
+                📬 {e.hits?.map(h => `"${h.keyword}"`).join(", ")}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Check history panel ──────────────────────────────────────────────────────
 
 function ChecksPanel({ artistId }: { artistId: number }) {
   const { data: checks, isLoading } = useQuery<CheckResult[]>({
@@ -65,6 +128,8 @@ function ChecksPanel({ artistId }: { artistId: number }) {
     </div>
   );
 }
+
+// ── Artist card ───────────────────────────────────────────────────────────────
 
 function ArtistCard({ artist }: { artist: Artist }) {
   const qc = useQueryClient();
@@ -120,11 +185,19 @@ function ArtistCard({ artist }: { artist: Artist }) {
   );
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function ArtistsPage() {
   const qc = useQueryClient();
   const [handle, setHandle] = useState("");
   const [addError, setAddError] = useState("");
-  const [runTriggered, setRunTriggered] = useState(false);
+
+  const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([]);
+  const [feedDone, setFeedDone] = useState(0);
+  const [feedTotal, setFeedTotal] = useState(0);
+  const [isChecking, setIsChecking] = useState(false);
+  const [showFeed, setShowFeed] = useState(false);
+  const [checkError, setCheckError] = useState("");
 
   const { data: artists, isLoading } = useQuery<Artist[]>({
     queryKey: ["artists"],
@@ -144,14 +217,6 @@ export default function ArtistsPage() {
     },
   });
 
-  const runMut = useMutation({
-    mutationFn: triggerRun,
-    onSuccess: () => {
-      setRunTriggered(true);
-      setTimeout(() => setRunTriggered(false), 5000);
-    },
-  });
-
   function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!handle.trim()) return;
@@ -159,18 +224,65 @@ export default function ArtistsPage() {
     addMut.mutate();
   }
 
+  function startCheck() {
+    setFeedEntries([]);
+    setFeedDone(0);
+    setFeedTotal(0);
+    setCheckError("");
+    setIsChecking(true);
+    setShowFeed(true);
+
+    streamCheck(
+      (event) => {
+        if (event.type === "start") {
+          setFeedTotal(event.total ?? 0);
+        } else if (event.type === "checking") {
+          setFeedEntries((prev) => [
+            { handle: event.handle!, status: "checking" },
+            ...prev,
+          ]);
+        } else if (event.type === "result") {
+          setFeedDone((n) => n + 1);
+          setFeedEntries((prev) =>
+            prev.map((e) =>
+              e.handle === event.handle && e.status === "checking"
+                ? { handle: event.handle!, status: event.status!, hits: event.hits, error: event.error }
+                : e
+            )
+          );
+        }
+      },
+      () => {
+        setIsChecking(false);
+        qc.invalidateQueries({ queryKey: ["artists"] });
+      },
+      (msg) => {
+        setIsChecking(false);
+        setCheckError(msg);
+      },
+    );
+  }
+
   return (
     <div>
       <div className="page-header">
         <h1>Artists</h1>
-        <button
-          className="btn-sm"
-          onClick={() => runMut.mutate()}
-          disabled={runMut.isPending || runTriggered}
-        >
-          {runTriggered ? "Check started…" : "Check now"}
+        <button className="btn-sm" onClick={startCheck} disabled={isChecking}>
+          {isChecking ? "Checking…" : "Check now"}
         </button>
       </div>
+
+      {checkError && <div className="error-msg" style={{ marginBottom: "1rem" }}>{checkError}</div>}
+
+      {showFeed && (
+        <CheckFeed
+          entries={feedEntries}
+          done={feedDone}
+          total={feedTotal}
+          isRunning={isChecking}
+          onClose={() => setShowFeed(false)}
+        />
+      )}
 
       <form className="add-form" onSubmit={handleAdd}>
         <input
