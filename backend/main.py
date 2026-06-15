@@ -28,6 +28,7 @@ with engine.connect() as _conn:
     from sqlalchemy import text
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_username VARCHAR"))
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_password VARCHAR"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_session_cookie VARCHAR"))
     _conn.commit()
 
 
@@ -101,14 +102,13 @@ def auth_me(current_user: dict = Depends(get_current_user), db: Session = Depend
         "email": user.email,
         "name": user.name,
         "picture": user.picture,
-        "has_instagram": bool(user.instagram_username and user.instagram_password),
+        "has_instagram": bool(user.instagram_session_cookie),
         "instagram_username": user.instagram_username,
     }
 
 
 class _MeUpdate(BaseModel):
-    instagram_username: str | None = None
-    instagram_password: str | None = None
+    instagram_session_cookie: str | None = None
 
 
 @app.put("/auth/me")
@@ -118,20 +118,29 @@ def update_me(
     db: Session = Depends(get_db),
 ):
     from fastapi import HTTPException
+    import scraper
     user = db.get(models.User, current_user["user_id"])
     if not user:
         raise HTTPException(404, "User not found")
-    if body.instagram_username is not None:
-        user.instagram_username = body.instagram_username or None
-    if body.instagram_password is not None:
-        user.instagram_password = encrypt(body.instagram_password) if body.instagram_password else None
-    db.commit()
+    if body.instagram_session_cookie is not None:
+        cookie = body.instagram_session_cookie.strip() or None
+        if cookie:
+            # Verify the cookie and get the username
+            username = scraper.verify_session_cookie(cookie)
+            if not username:
+                raise HTTPException(400, "Session cookie is invalid or expired")
+            user.instagram_username = username
+            user.instagram_session_cookie = encrypt(cookie)
+        else:
+            user.instagram_session_cookie = None
+            user.instagram_username = None
+        db.commit()
     return {
         "id": user.id,
         "email": user.email,
         "name": user.name,
         "picture": user.picture,
-        "has_instagram": bool(user.instagram_username and user.instagram_password),
+        "has_instagram": bool(user.instagram_session_cookie),
         "instagram_username": user.instagram_username,
     }
 

@@ -1,5 +1,5 @@
-// ABOUTME: Settings page for configuring Instagram credentials.
-// ABOUTME: Stores credentials securely in the backend; streams import progress via SSE.
+// ABOUTME: Settings page for connecting an Instagram account via session cookie.
+// ABOUTME: Guides the user through finding their session cookie; streams import progress.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -13,14 +13,13 @@ type ImportState =
 
 export default function SettingsPage({ user }: { user: User }) {
   const qc = useQueryClient();
-  const [username, setUsername] = useState(user.instagram_username ?? "");
-  const [password, setPassword] = useState("");
+  const [cookie, setCookie] = useState("");
   const [importState, setImportState] = useState<ImportState>({ status: "idle" });
 
   const saveMut = useMutation({
-    mutationFn: () => saveInstagramCreds(username, password),
+    mutationFn: () => saveInstagramCreds(cookie),
     onSuccess: () => {
-      setPassword("");
+      setCookie("");
       qc.invalidateQueries({ queryKey: ["me"] });
     },
   });
@@ -32,7 +31,6 @@ export default function SettingsPage({ user }: { user: User }) {
 
   function handleImport() {
     setImportState({ status: "running", done: 0, total: 0, added: 0 });
-
     streamImport(
       (done, total, added) => setImportState({ status: "running", done, total, added }),
       (added, skipped) => {
@@ -51,40 +49,50 @@ export default function SettingsPage({ user }: { user: User }) {
 
       <div className="settings-section">
         <h2>Instagram Account</h2>
-        <p className="hint">
-          Used to fetch your following list and improve scraping reliability.
-          Your password is encrypted before being stored.
-        </p>
-        <form className="settings-form" onSubmit={handleSave}>
-          <label>
-            Username
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="your_instagram_handle"
-              autoComplete="username"
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={user.has_instagram ? "Enter new password to update" : "Instagram password"}
-              autoComplete="current-password"
-            />
-          </label>
-          <button type="submit" disabled={saveMut.isPending || !username}>
-            {saveMut.isPending ? "Saving…" : "Save credentials"}
-          </button>
-          {saveMut.isSuccess && <span className="save-ok">✓ Saved</span>}
-          {saveMut.isError && (
-            <span className="error-msg">
-              {(saveMut.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Save failed"}
-            </span>
-          )}
-        </form>
+
+        {user.has_instagram ? (
+          <div className="ig-connected">
+            <span className="save-ok">✓ Connected as @{user.instagram_username}</span>
+            <button className="btn-sm" style={{ marginLeft: "1rem" }} onClick={() => saveMut.mutate()}>
+              Disconnect
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="hint">
+              Connect your Instagram account to import your following list. We use your browser
+              session — no password ever leaves your device.
+            </p>
+
+            <div className="cookie-steps">
+              <p className="step"><strong>1.</strong> Open <a href="https://www.instagram.com" target="_blank" rel="noreferrer">instagram.com</a> and log in.</p>
+              <p className="step"><strong>2.</strong> Open DevTools: <code>F12</code> (Windows) or <code>Cmd+Option+I</code> (Mac).</p>
+              <p className="step"><strong>3.</strong> Go to <strong>Application</strong> → <strong>Cookies</strong> → <strong>https://www.instagram.com</strong>.</p>
+              <p className="step"><strong>4.</strong> Find the cookie named <code>sessionid</code> and copy its <strong>Value</strong>.</p>
+              <p className="step"><strong>5.</strong> Paste it below:</p>
+            </div>
+
+            <form className="settings-form" onSubmit={handleSave}>
+              <label>
+                Session cookie value
+                <input
+                  value={cookie}
+                  onChange={(e) => setCookie(e.target.value)}
+                  placeholder="Paste sessionid value here"
+                  autoComplete="off"
+                />
+              </label>
+              <button type="submit" disabled={saveMut.isPending || !cookie.trim()}>
+                {saveMut.isPending ? "Verifying…" : "Connect Instagram"}
+              </button>
+              {saveMut.isError && (
+                <span className="error-msg">
+                  {(saveMut.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Invalid or expired session cookie"}
+                </span>
+              )}
+            </form>
+          </>
+        )}
       </div>
 
       {user.has_instagram && (
@@ -94,10 +102,7 @@ export default function SettingsPage({ user }: { user: User }) {
             Adds everyone you follow on Instagram as a tracked artist. Already-tracked accounts are skipped.
           </p>
 
-          <button
-            onClick={handleImport}
-            disabled={importState.status === "running"}
-          >
+          <button onClick={handleImport} disabled={importState.status === "running"}>
             {importState.status === "running" ? "Importing…" : "Import from Instagram"}
           </button>
 
@@ -109,24 +114,21 @@ export default function SettingsPage({ user }: { user: User }) {
                   style={{
                     width: importState.total > 0
                       ? `${Math.round((importState.done / importState.total) * 100)}%`
-                      : "0%"
+                      : "0%",
                   }}
                 />
               </div>
               <div className="import-progress-label">
                 {importState.total > 0
                   ? `${importState.done} / ${importState.total} — ${importState.added} added`
-                  : "Connecting…"}
+                  : "Connecting to Instagram…"}
               </div>
             </div>
           )}
 
           {importState.status === "done" && (
-            <p className="import-msg">
-              ✓ Done — {importState.added} artists added, {importState.skipped} already tracked.
-            </p>
+            <p className="import-msg">✓ Done — {importState.added} artists added, {importState.skipped} already tracked.</p>
           )}
-
           {importState.status === "error" && (
             <p className="error-msg">Error: {importState.message}</p>
           )}

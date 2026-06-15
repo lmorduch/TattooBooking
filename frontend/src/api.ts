@@ -73,8 +73,8 @@ export async function triggerRun(): Promise<void> {
   await api.post("/artists/run");
 }
 
-export async function saveInstagramCreds(username: string, password: string): Promise<User> {
-  const r = await api.put<User>("/auth/me", { instagram_username: username, instagram_password: password });
+export async function saveInstagramCreds(sessionCookie: string): Promise<User> {
+  const r = await api.put<User>("/auth/me", { instagram_session_cookie: sessionCookie || null });
   return r.data;
 }
 

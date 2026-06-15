@@ -48,24 +48,37 @@ def _make_loader() -> instaloader.Instaloader:
     )
 
 
-def _get_loader(username: str = "", password: str = "") -> instaloader.Instaloader:
+def _get_loader(session_cookie: str = "") -> instaloader.Instaloader:
+    """Returns a loader with session cookie auth if provided, anonymous otherwise."""
     global _loader, _loader_username
 
-    # Use env-var creds as fallback
-    username = username or settings.instagram_username
-    password = password or settings.instagram_password
-
-    if _loader is None or _loader_username != username:
+    if _loader is None or (_loader_username != session_cookie):
         _loader = _make_loader()
-        _loader_username = username
-        if username and password:
+        _loader_username = session_cookie
+        if session_cookie:
             try:
-                _loader.login(username, password)
-                logger.info("Logged into Instagram as %s", username)
+                _loader.context._session.cookies.update({"sessionid": session_cookie})
+                username = _loader.test_login()
+                if username:
+                    _loader.context.username = username
+                    logger.info("Loaded Instagram session for %s", username)
+                else:
+                    logger.warning("Instagram session cookie appears invalid")
             except Exception as e:
-                logger.warning("Instagram login failed: %s", e)
+                logger.warning("Failed to load Instagram session: %s", e)
 
     return _loader
+
+
+def verify_session_cookie(session_cookie: str) -> str | None:
+    """Returns the Instagram username if the cookie is valid, else None."""
+    try:
+        L = _make_loader()
+        L.context._session.cookies.update({"sessionid": session_cookie})
+        username = L.test_login()
+        return username or None
+    except Exception:
+        return None
 
 
 def _find_keywords(text: str) -> str | None:
@@ -78,7 +91,7 @@ def _find_keywords(text: str) -> str | None:
     return None
 
 
-def check_artist(handle: str) -> dict[str, Any]:
+def check_artist(handle: str, session_cookie: str = "") -> dict[str, Any]:
     """
     Returns:
       {"status": "ok", "hits": []}
@@ -86,7 +99,7 @@ def check_artist(handle: str) -> dict[str, Any]:
       {"status": "error", "error": "...", "breakage": True|False}
     breakage=True means Instagram is blocking us (not a transient network issue).
     """
-    L = _get_loader()
+    L = _get_loader(session_cookie)
     hits = []
 
     try:
@@ -133,12 +146,12 @@ def check_artist(handle: str) -> dict[str, Any]:
     return {"status": "hit" if hits else "ok", "hits": hits}
 
 
-def import_following(username: str, password: str) -> list[str]:
+def import_following(username: str, session_cookie: str) -> list[str]:
     """
     Returns list of handles that the given account follows.
     Raises on auth failure or other errors.
     """
-    L = _get_loader(username, password)
+    L = _get_loader(session_cookie)
     profile = instaloader.Profile.from_username(L.context, username)
     handles = []
     for followee in profile.get_followees():

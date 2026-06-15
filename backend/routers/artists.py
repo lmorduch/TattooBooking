@@ -160,11 +160,11 @@ async def import_stream(
     db: Session = Depends(get_db),
 ):
     user = db.get(models.User, current_user["user_id"])
-    if not user or not user.instagram_username or not user.instagram_password:
-        raise HTTPException(400, "Instagram credentials not configured. Go to Settings first.")
+    if not user or not user.instagram_session_cookie:
+        raise HTTPException(400, "Instagram session not configured. Go to Settings first.")
 
     username = user.instagram_username
-    password = decrypt(user.instagram_password)
+    session_cookie = decrypt(user.instagram_session_cookie)
     user_id = current_user["user_id"]
 
     q: sync_queue.Queue = sync_queue.Queue()
@@ -174,7 +174,7 @@ async def import_stream(
         db2 = SessionLocal()
         try:
             import instaloader
-            L = scraper._get_loader(username, password)
+            L = scraper._get_loader(session_cookie)
             profile = instaloader.Profile.from_username(L.context, username)
             total = profile.followees_count
             q.put({"type": "start", "total": total})

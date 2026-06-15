@@ -18,7 +18,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     picture: Mapped[str | None] = mapped_column(String, nullable=True)
     instagram_username: Mapped[str | None] = mapped_column(String, nullable=True)
-    instagram_password: Mapped[str | None] = mapped_column(String, nullable=True)
+    instagram_session_cookie: Mapped[str | None] = mapped_column(String, nullable=True)
 
     artists: Mapped[list["Artist"]] = relationship("Artist", back_populates="user")
 
