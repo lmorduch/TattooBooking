@@ -205,9 +205,19 @@ async def import_stream(
     async def generate():
         loop = asyncio.get_event_loop()
         while True:
-            event = await loop.run_in_executor(None, q.get)
-            yield {"data": json.dumps(event)}
-            if event.get("type") in ("done", "error"):
-                break
+            try:
+                event = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: q.get(timeout=15)),
+                    timeout=20,
+                )
+                yield {"data": json.dumps(event)}
+                if event.get("type") in ("done", "error"):
+                    break
+            except (asyncio.TimeoutError, sync_queue.Empty):
+                if not thread.is_alive():
+                    yield {"data": json.dumps({"type": "error", "message": "Import process ended unexpectedly"})}
+                    break
+                # Send a keepalive comment so Railway's proxy doesn't cut the connection
+                yield {"comment": "ping"}
 
-    return EventSourceResponse(generate())
+    return EventSourceResponse(generate(), ping=20)
