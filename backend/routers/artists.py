@@ -7,12 +7,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+import asyncio
+import json
+import queue as sync_queue
+import threading
+
 import models
 import scheduler
 import scraper
 from auth import get_current_user
 from crypto import decrypt
 from database import get_db
+from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(prefix="/artists", tags=["artists"])
 
@@ -148,13 +154,8 @@ def trigger_check(current_user: dict = Depends(get_current_user)):
     return {"message": "Check run started"}
 
 
-class ImportResult(BaseModel):
-    added: int
-    skipped: int
-
-
-@router.post("/import", response_model=ImportResult)
-def import_from_instagram(
+@router.get("/import/stream")
+async def import_stream(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -162,24 +163,51 @@ def import_from_instagram(
     if not user or not user.instagram_username or not user.instagram_password:
         raise HTTPException(400, "Instagram credentials not configured. Go to Settings first.")
 
+    username = user.instagram_username
     password = decrypt(user.instagram_password)
+    user_id = current_user["user_id"]
 
-    try:
-        handles = scraper.import_following(user.instagram_username, password)
-    except Exception as e:
-        raise HTTPException(502, f"Failed to fetch Instagram following list: {e}")
+    q: sync_queue.Queue = sync_queue.Queue()
 
-    added = 0
-    skipped = 0
-    for handle in handles:
-        existing = db.query(models.Artist).filter_by(
-            user_id=current_user["user_id"], handle=handle
-        ).first()
-        if existing:
-            skipped += 1
-        else:
-            db.add(models.Artist(user_id=current_user["user_id"], handle=handle))
-            added += 1
+    def do_import():
+        from database import SessionLocal
+        db2 = SessionLocal()
+        try:
+            import instaloader
+            L = scraper._get_loader(username, password)
+            profile = instaloader.Profile.from_username(L.context, username)
+            total = profile.followees_count
+            q.put({"type": "start", "total": total})
 
-    db.commit()
-    return ImportResult(added=added, skipped=skipped)
+            added = skipped = 0
+            for i, followee in enumerate(profile.get_followees()):
+                handle = followee.username
+                existing = db2.query(models.Artist).filter_by(user_id=user_id, handle=handle).first()
+                if existing:
+                    skipped += 1
+                else:
+                    db2.add(models.Artist(user_id=user_id, handle=handle))
+                    db2.commit()
+                    added += 1
+
+                if (i + 1) % 10 == 0 or i == 0:
+                    q.put({"type": "progress", "done": i + 1, "total": total, "added": added, "skipped": skipped})
+
+            q.put({"type": "done", "added": added, "skipped": skipped})
+        except Exception as e:
+            q.put({"type": "error", "message": str(e)})
+        finally:
+            db2.close()
+
+    thread = threading.Thread(target=do_import, daemon=True)
+    thread.start()
+
+    async def generate():
+        loop = asyncio.get_event_loop()
+        while True:
+            event = await loop.run_in_executor(None, q.get)
+            yield {"data": json.dumps(event)}
+            if event.get("type") in ("done", "error"):
+                break
+
+    return EventSourceResponse(generate())

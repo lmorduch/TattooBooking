@@ -78,7 +78,33 @@ export async function saveInstagramCreds(username: string, password: string): Pr
   return r.data;
 }
 
-export async function importFromInstagram(): Promise<{ added: number; skipped: number }> {
-  const r = await api.post<{ added: number; skipped: number }>("/artists/import");
-  return r.data;
+export function streamImport(
+  onProgress: (done: number, total: number, added: number) => void,
+  onDone: (added: number, skipped: number) => void,
+  onError: (message: string) => void,
+): () => void {
+  const base = import.meta.env.VITE_API_URL ?? "";
+  const es = new EventSource(`${base}/artists/import/stream`, { withCredentials: true });
+
+  es.onmessage = (e) => {
+    const event = JSON.parse(e.data) as {
+      type: string; total?: number; done?: number; added?: number; skipped?: number; message?: string;
+    };
+    if (event.type === "progress" || event.type === "start") {
+      onProgress(event.done ?? 0, event.total ?? 0, event.added ?? 0);
+    } else if (event.type === "done") {
+      es.close();
+      onDone(event.added ?? 0, event.skipped ?? 0);
+    } else if (event.type === "error") {
+      es.close();
+      onError(event.message ?? "Import failed");
+    }
+  };
+
+  es.onerror = () => {
+    es.close();
+    onError("Connection lost during import");
+  };
+
+  return () => es.close();
 }

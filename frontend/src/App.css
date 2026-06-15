@@ -168,3 +168,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .save-ok { color: var(--success); font-size: 0.85rem; }
 .import-msg { margin-top: 0.75rem; font-size: 0.9rem; color: var(--muted); }
+
+.import-progress { margin-top: 0.75rem; max-width: 380px; }
+.import-progress-bar-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 0.4rem; }
+.import-progress-bar-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.3s ease; }
+.import-progress-label { font-size: 0.85rem; color: var(--muted); }

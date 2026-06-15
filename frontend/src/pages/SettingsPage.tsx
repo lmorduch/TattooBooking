@@ -1,15 +1,21 @@
 // ABOUTME: Settings page for configuring Instagram credentials.
-// ABOUTME: Stores credentials securely in the backend; shows import button once set.
+// ABOUTME: Stores credentials securely in the backend; streams import progress via SSE.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { importFromInstagram, saveInstagramCreds, type User } from "../api";
+import { saveInstagramCreds, streamImport, type User } from "../api";
+
+type ImportState =
+  | { status: "idle" }
+  | { status: "running"; done: number; total: number; added: number }
+  | { status: "done"; added: number; skipped: number }
+  | { status: "error"; message: string };
 
 export default function SettingsPage({ user }: { user: User }) {
   const qc = useQueryClient();
   const [username, setUsername] = useState(user.instagram_username ?? "");
   const [password, setPassword] = useState("");
-  const [importMsg, setImportMsg] = useState("");
+  const [importState, setImportState] = useState<ImportState>({ status: "idle" });
 
   const saveMut = useMutation({
     mutationFn: () => saveInstagramCreds(username, password),
@@ -19,21 +25,22 @@ export default function SettingsPage({ user }: { user: User }) {
     },
   });
 
-  const importMut = useMutation({
-    mutationFn: importFromInstagram,
-    onSuccess: (result) => {
-      setImportMsg(`Done — added ${result.added} artists, skipped ${result.skipped} already tracked.`);
-      qc.invalidateQueries({ queryKey: ["artists"] });
-    },
-    onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Import failed";
-      setImportMsg(`Error: ${msg}`);
-    },
-  });
-
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
     saveMut.mutate();
+  }
+
+  function handleImport() {
+    setImportState({ status: "running", done: 0, total: 0, added: 0 });
+
+    streamImport(
+      (done, total, added) => setImportState({ status: "running", done, total, added }),
+      (added, skipped) => {
+        setImportState({ status: "done", added, skipped });
+        qc.invalidateQueries({ queryKey: ["artists"] });
+      },
+      (message) => setImportState({ status: "error", message }),
+    );
   }
 
   return (
@@ -85,15 +92,44 @@ export default function SettingsPage({ user }: { user: User }) {
           <h2>Import Following List</h2>
           <p className="hint">
             Adds everyone you follow on Instagram as a tracked artist. Already-tracked accounts are skipped.
-            This may take a few minutes depending on how many accounts you follow.
           </p>
+
           <button
-            onClick={() => { setImportMsg(""); importMut.mutate(); }}
-            disabled={importMut.isPending}
+            onClick={handleImport}
+            disabled={importState.status === "running"}
           >
-            {importMut.isPending ? "Importing… (this may take a while)" : "Import from Instagram"}
+            {importState.status === "running" ? "Importing…" : "Import from Instagram"}
           </button>
-          {importMsg && <p className="import-msg">{importMsg}</p>}
+
+          {importState.status === "running" && (
+            <div className="import-progress">
+              <div className="import-progress-bar-track">
+                <div
+                  className="import-progress-bar-fill"
+                  style={{
+                    width: importState.total > 0
+                      ? `${Math.round((importState.done / importState.total) * 100)}%`
+                      : "0%"
+                  }}
+                />
+              </div>
+              <div className="import-progress-label">
+                {importState.total > 0
+                  ? `${importState.done} / ${importState.total} — ${importState.added} added`
+                  : "Connecting…"}
+              </div>
+            </div>
+          )}
+
+          {importState.status === "done" && (
+            <p className="import-msg">
+              ✓ Done — {importState.added} artists added, {importState.skipped} already tracked.
+            </p>
+          )}
+
+          {importState.status === "error" && (
+            <p className="error-msg">Error: {importState.message}</p>
+          )}
         </div>
       )}
     </div>
