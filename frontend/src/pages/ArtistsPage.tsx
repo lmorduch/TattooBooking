@@ -148,7 +148,12 @@ function ArtistCard({ artist }: { artist: Artist }) {
           </a>
         </span>
         <span className={statusClass(artist.last_status)}>{statusLabel(artist.last_status)}</span>
-        <span className="artist-meta">{formatDate(artist.last_checked_at)}</span>
+        <span className="artist-meta">
+          {artist.last_post_url
+            ? <a className="artist-link" href={artist.last_post_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>last post {formatDate(artist.last_post_at)} ↗</a>
+            : <span>checked {formatDate(artist.last_checked_at)}</span>
+          }
+        </span>
         <div className="artist-actions" onClick={(e) => e.stopPropagation()}>
           <button
             className="btn-sm"

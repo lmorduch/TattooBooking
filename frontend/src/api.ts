@@ -21,6 +21,8 @@ export interface Artist {
   handle: string;
   active: boolean;
   last_checked_at: string | null;
+  last_post_url: string | null;
+  last_post_at: string | null;
   last_status: "pending" | "ok" | "hit" | "error";
   consecutive_errors: number;
   created_at: string;

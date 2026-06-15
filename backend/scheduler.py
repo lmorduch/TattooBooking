@@ -65,12 +65,18 @@ def check_all_artists(
 
             # hits_by_handle: handle -> list of hit dicts
             hits_by_handle: dict[str, list[dict]] = {}
+            # last_post_by_handle: handle -> most recent post seen (url, taken_at)
+            last_post_by_handle: dict[str, dict] = {}
 
             try:
                 for post in scraper.iter_timeline_posts(session_cookie):
                     handle = post["username"]
                     if handle not in artists_by_handle:
                         continue
+                    # Track the most recent post URL seen for this artist
+                    existing = last_post_by_handle.get(handle)
+                    if not existing or post["taken_at"] > existing["taken_at"]:
+                        last_post_by_handle[handle] = post
                     kw = scraper._find_keywords(post["caption"])
                     if kw:
                         hits_by_handle.setdefault(handle, []).append({
@@ -91,6 +97,10 @@ def check_all_artists(
             for handle, artist in artists_by_handle.items():
                 hits = hits_by_handle.get(handle, [])
                 artist.last_checked_at = now
+                last_post = last_post_by_handle.get(handle)
+                if last_post:
+                    artist.last_post_url = last_post["post_url"]
+                    artist.last_post_at = last_post["taken_at"].replace(tzinfo=None)
 
                 if hits:
                     artist.consecutive_errors = 0

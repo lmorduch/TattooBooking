@@ -28,6 +28,8 @@ class ArtistOut(BaseModel):
     handle: str
     active: bool
     last_checked_at: datetime | None
+    last_post_url: str | None
+    last_post_at: datetime | None
     last_status: str
     consecutive_errors: int
     created_at: datetime
