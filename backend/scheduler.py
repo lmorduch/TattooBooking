@@ -38,13 +38,15 @@ def check_all_artists() -> None:
         for user_id, user_artist_list in user_artists.items():
             user = db.get(models.User, user_id)
             session_cookie = ""
+            user_agent = ""
             if user and user.instagram_session_cookie:
                 try:
                     session_cookie = decrypt(user.instagram_session_cookie)
+                    user_agent = user.instagram_user_agent or ""
                 except Exception:
                     pass
             for artist in user_artist_list:
-                _check_one(db, artist, session_cookie)
+                _check_one(db, artist, session_cookie, user_agent)
 
     except Exception as e:
         logger.error("Scheduler run failed: %s", traceback.format_exc())
@@ -54,9 +56,9 @@ def check_all_artists() -> None:
         logger.info("Daily check run complete")
 
 
-def _check_one(db: Session, artist: models.Artist, session_cookie: str = "") -> None:
+def _check_one(db: Session, artist: models.Artist, session_cookie: str = "", user_agent: str = "") -> None:
     logger.info("Checking @%s", artist.handle)
-    result = scraper.check_artist(artist.handle, session_cookie)
+    result = scraper.check_artist(artist.handle, session_cookie, user_agent)
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     artist.last_checked_at = now

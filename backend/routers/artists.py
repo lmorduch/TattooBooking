@@ -163,7 +163,6 @@ async def import_stream(
     if not user or not user.instagram_session_cookie:
         raise HTTPException(400, "Instagram session not configured. Go to Settings first.")
 
-    username = user.instagram_username
     session_cookie = decrypt(user.instagram_session_cookie)
     user_id = current_user["user_id"]
 
@@ -173,15 +172,13 @@ async def import_stream(
         from database import SessionLocal
         db2 = SessionLocal()
         try:
-            import instaloader
-            L = scraper._get_loader(session_cookie)
-            profile = instaloader.Profile.from_username(L.context, username)
-            total = profile.followees_count
-            q.put({"type": "start", "total": total})
-
             added = skipped = 0
-            for i, followee in enumerate(profile.get_followees()):
-                handle = followee.username
+            total = 0
+            for i, (handle, t) in enumerate(scraper.iter_following(session_cookie)):
+                if i == 0:
+                    total = t
+                    q.put({"type": "start", "total": total})
+
                 existing = db2.query(models.Artist).filter_by(user_id=user_id, handle=handle).first()
                 if existing:
                     skipped += 1

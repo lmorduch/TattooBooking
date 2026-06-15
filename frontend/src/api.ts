@@ -74,7 +74,10 @@ export async function triggerRun(): Promise<void> {
 }
 
 export async function saveInstagramCreds(sessionCookie: string): Promise<User> {
-  const r = await api.put<User>("/auth/me", { instagram_session_cookie: sessionCookie || null });
+  const r = await api.put<User>("/auth/me", {
+    instagram_session_cookie: sessionCookie || null,
+    instagram_user_agent: sessionCookie ? navigator.userAgent : null,
+  });
   return r.data;
 }
 

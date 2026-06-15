@@ -29,6 +29,7 @@ def _run_migrations() -> None:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_username VARCHAR"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_password VARCHAR"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_session_cookie VARCHAR"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_user_agent VARCHAR"))
         conn.commit()
 
 
@@ -113,6 +114,7 @@ def auth_me(current_user: dict = Depends(get_current_user), db: Session = Depend
 
 class _MeUpdate(BaseModel):
     instagram_session_cookie: str | None = None
+    instagram_user_agent: str | None = None
 
 
 @app.put("/auth/me")
@@ -129,15 +131,17 @@ def update_me(
     if body.instagram_session_cookie is not None:
         cookie = body.instagram_session_cookie.strip() or None
         if cookie:
-            # Verify the cookie and get the username
-            username = scraper.verify_session_cookie(cookie)
+            ua = (body.instagram_user_agent or "").strip() or None
+            username = scraper.verify_session_cookie(cookie, user_agent=ua)
             if not username:
                 raise HTTPException(400, "Session cookie is invalid or expired")
             user.instagram_username = username
             user.instagram_session_cookie = encrypt(cookie)
+            user.instagram_user_agent = ua
         else:
             user.instagram_session_cookie = None
             user.instagram_username = None
+            user.instagram_user_agent = None
         db.commit()
     return {
         "id": user.id,
