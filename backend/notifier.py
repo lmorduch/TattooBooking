@@ -52,6 +52,25 @@ def notify_breakage(handle: str, error: str, consecutive: int) -> None:
     _send(f"⚠️ Scraper broken: @{handle}", body)
 
 
+def notify_scan_complete(total_posts: int, hits_by_handle: dict, scanned_to: str | None) -> None:
+    hit_count = sum(len(v) for v in hits_by_handle.values())
+    if hit_count > 0:
+        lines = [f"Scan complete — {total_posts} posts scanned, {hit_count} keyword hit(s).\n"]
+        for handle, hits in hits_by_handle.items():
+            lines.append(f"@{handle}:")
+            for h in hits:
+                lines.append(f"  keyword: {h['keyword']}")
+                if h.get("post_url"):
+                    lines.append(f"  post: {h['post_url']}")
+        subject = f"🎨 Scan complete: {hit_count} hit(s) found"
+    else:
+        lines = [f"Scan complete — {total_posts} posts scanned, no booking keywords found."]
+        subject = "✓ Scan complete — nothing found"
+    if scanned_to:
+        lines.append(f"\nScanned back to: {scanned_to}")
+    _send(subject, "\n".join(lines))
+
+
 def notify_scheduler_error(error: str) -> None:
     body = (
         f"The daily check scheduler encountered an unexpected error:\n\n{error}\n\n"

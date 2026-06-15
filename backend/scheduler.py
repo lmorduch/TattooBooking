@@ -69,9 +69,11 @@ def check_all_artists(
             last_post_by_handle: dict[str, dict] = {}
             # oldest post seen across the whole scan (to report coverage)
             oldest_post: dict | None = None
+            posts_scanned = 0
 
             try:
                 for post in scraper.iter_timeline_posts(session_cookie):
+                    posts_scanned += 1
                     if oldest_post is None or post["taken_at"] < oldest_post["taken_at"]:
                         oldest_post = post
                     if emit:
@@ -142,6 +144,12 @@ def check_all_artists(
                         "done": done,
                         "total": len(artists_by_handle),
                     })
+
+            notifier.notify_scan_complete(
+                total_posts=posts_scanned,
+                hits_by_handle=hits_by_handle,
+                scanned_to=oldest_post["taken_at"].strftime("%Y-%m-%d %H:%M UTC") if oldest_post else None,
+            )
 
             if emit:
                 done_event: dict = {"type": "done", "total": len(artists_by_handle)}
