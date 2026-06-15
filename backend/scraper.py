@@ -250,67 +250,115 @@ def _user_id_from_cookie(session_cookie: str) -> str:
 
 def iter_timeline_posts(session_cookie: str, hours_back: int = 48):
     """
-    Yields recent posts from the Instagram home timeline feed.
-    Stops when posts are older than hours_back hours.
+    Yields posts from the chronological Instagram following feed.
+    Uses a headless browser to load /?variant=following and intercepts
+    the GraphQL/API responses to extract post data.
     Each yielded item: {"username", "caption", "post_url", "taken_at"}
     """
-    import time as _time
+    import asyncio
     from datetime import datetime, timezone, timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
-    s = get_ig_session(session_cookie)
-    max_id = None
+    posts = asyncio.run(_fetch_following_posts(session_cookie, cutoff))
+    yield from posts
 
-    while True:
-        data = {"reason": "cold_start" if max_id is None else "pagination"}
-        if max_id:
-            data["max_id"] = max_id
 
-        resp = s.post(
-            "https://i.instagram.com/api/v1/feed/timeline/",
-            data=data,
-            timeout=30,
+async def _fetch_following_posts(session_cookie: str, cutoff) -> list[dict]:
+    from playwright.async_api import async_playwright
+    from datetime import datetime, timezone
+    import json
+
+    collected: list[dict] = []
+    seen_codes: set[str] = set()
+
+    def _extract_posts_from_json(obj) -> list[dict]:
+        """Recursively find media objects with taken_at + username in any JSON shape."""
+        results = []
+        if isinstance(obj, dict):
+            # Mobile API shape: has taken_at + user.username + code
+            taken_at = obj.get("taken_at")
+            user = obj.get("user") or {}
+            username = user.get("username") or obj.get("username") or ""
+            code = obj.get("code") or obj.get("shortcode") or ""
+            if taken_at and username and code:
+                cap_obj = obj.get("caption") or {}
+                caption = cap_obj.get("text") if isinstance(cap_obj, dict) else (cap_obj or "")
+                results.append({
+                    "username": username,
+                    "caption": caption or "",
+                    "post_url": f"https://www.instagram.com/p/{code}/",
+                    "taken_at": datetime.fromtimestamp(int(taken_at), tz=timezone.utc),
+                    "code": code,
+                })
+            for v in obj.values():
+                results.extend(_extract_posts_from_json(v))
+        elif isinstance(obj, list):
+            for item in obj:
+                results.extend(_extract_posts_from_json(item))
+        return results
+
+    async def handle_response(response):
+        url = response.url
+        if "instagram.com" not in url:
+            return
+        if not any(x in url for x in ("graphql", "api/v1/feed", "api/v1/user")):
+            return
+        try:
+            body = await response.json()
+            for post in _extract_posts_from_json(body):
+                if post["code"] not in seen_codes:
+                    seen_codes.add(post["code"])
+                    collected.append(post)
+        except Exception:
+            pass
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
-        if resp.status_code == 429:
-            raise requests.HTTPError(response=resp)
-        resp.raise_for_status()
-        body = resp.json()
+        ctx = await browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 900},
+        )
+        await ctx.add_cookies([{
+            "name": "sessionid",
+            "value": session_cookie,
+            "domain": ".instagram.com",
+            "path": "/",
+            "secure": True,
+        }])
 
-        items = body.get("feed_items") or body.get("items") or []
-        if not items:
-            break
+        page = await ctx.new_page()
+        page.on("response", handle_response)
 
-        any_in_range = False
-        for item in items:
-            media = item.get("media_or_ad") or item
-            taken_at = media.get("taken_at") or 0
-            post_time = datetime.fromtimestamp(taken_at, tz=timezone.utc)
-            if post_time < cutoff:
-                continue
-            any_in_range = True
-            user = media.get("user") or {}
-            username = user.get("username") or ""
-            cap_obj = media.get("caption") or {}
-            caption = cap_obj.get("text") or "" if isinstance(cap_obj, dict) else ""
-            code = media.get("code") or ""
-            yield {
-                "username": username,
-                "caption": caption,
-                "post_url": f"https://www.instagram.com/p/{code}/" if code else "",
-                "taken_at": post_time,
-            }
+        logger.info("Playwright: loading following feed")
+        await page.goto("https://www.instagram.com/?variant=following", wait_until="networkidle", timeout=30000)
+        await page.wait_for_timeout(3000)
 
-        # Stop if the oldest item on this page is already past cutoff
-        last = items[-1]
-        last_media = last.get("media_or_ad") or last
-        last_taken = last_media.get("taken_at") or 0
-        if datetime.fromtimestamp(last_taken, tz=timezone.utc) < cutoff:
-            break
+        # Scroll until we've gone past the cutoff or run out of content
+        prev_count = 0
+        stall_count = 0
+        for _ in range(30):
+            oldest = min((p["taken_at"] for p in collected), default=None)
+            if oldest and oldest < cutoff:
+                logger.info("Playwright: hit cutoff at %s", oldest)
+                break
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(2000)
+            if len(collected) == prev_count:
+                stall_count += 1
+                if stall_count >= 3:
+                    logger.info("Playwright: no new posts after 3 scrolls, stopping")
+                    break
+            else:
+                stall_count = 0
+            prev_count = len(collected)
 
-        max_id = body.get("next_max_id")
-        if not max_id:
-            break
+        await browser.close()
 
-        _time.sleep(random.uniform(1.0, 2.0))
+    # Sort newest-first, filter to cutoff window
+    collected.sort(key=lambda p: p["taken_at"], reverse=True)
+    return [p for p in collected if p["taken_at"] >= cutoff]
 
 
 def iter_following(session_cookie: str):
