@@ -250,7 +250,7 @@ def _user_id_from_cookie(session_cookie: str) -> str:
 
 def iter_timeline_posts(session_cookie: str, hours_back: int = 48):
     """
-    Yields recent posts from the chronological following feed.
+    Yields recent posts from the Instagram home timeline feed.
     Stops when posts are older than hours_back hours.
     Each yielded item: {"username", "caption", "post_url", "taken_at"}
     """
@@ -261,13 +261,13 @@ def iter_timeline_posts(session_cookie: str, hours_back: int = 48):
     max_id = None
 
     while True:
-        params: dict = {}
+        data = {"reason": "cold_start" if max_id is None else "pagination"}
         if max_id:
-            params["max_id"] = max_id
+            data["max_id"] = max_id
 
-        resp = s.get(
-            "https://i.instagram.com/api/v1/feed/following/",
-            params=params,
+        resp = s.post(
+            "https://i.instagram.com/api/v1/feed/timeline/",
+            data=data,
             timeout=30,
         )
         if resp.status_code == 429:
@@ -275,7 +275,7 @@ def iter_timeline_posts(session_cookie: str, hours_back: int = 48):
         resp.raise_for_status()
         body = resp.json()
 
-        items = body.get("items") or []
+        items = body.get("feed_items") or body.get("items") or []
         if not items:
             break
 
