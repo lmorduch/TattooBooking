@@ -115,48 +115,69 @@ def check_artist(handle: str, session_cookie: str = "", user_agent: str = "") ->
       {"status": "hit", "hits": [{"keyword": ..., "post_url": ..., "caption_snippet": ...}]}
       {"status": "error", "error": "...", "breakage": True|False}
     breakage=True means Instagram is blocking us (not a transient network issue).
+    Uses the private mobile API — instaloader's GraphQL is broken.
     """
-    L = _get_loader(session_cookie, user_agent)
+    if not session_cookie:
+        return {"status": "error", "error": "Instagram session required", "breakage": True}
+
+    s = _ig_session(session_cookie)
     hits = []
 
     try:
-        profile = instaloader.Profile.from_username(L.context, handle)
-    except instaloader.exceptions.ProfileNotExistsException:
-        return {"status": "error", "error": f"Profile @{handle} does not exist", "breakage": True}
-    except instaloader.exceptions.LoginRequiredException:
-        return {"status": "error", "error": "Instagram requires login to view this profile", "breakage": True}
-    except instaloader.exceptions.ConnectionException as e:
-        return {"status": "error", "error": f"Connection error: {e}", "breakage": False}
-    except Exception as e:
-        return {"status": "error", "error": str(e), "breakage": False}
+        resp = s.get(
+            "https://i.instagram.com/api/v1/users/web_profile_info/",
+            params={"username": handle},
+            timeout=30,
+        )
+        if resp.status_code == 404:
+            return {"status": "error", "error": f"Profile @{handle} not found", "breakage": True}
+        resp.raise_for_status()
+        data = resp.json()
+        user = (data.get("data") or {}).get("user") or data.get("user") or {}
 
-    # Check bio
-    bio_kw = _find_keywords(profile.biography)
-    if bio_kw:
-        hits.append({
-            "keyword": bio_kw,
-            "post_url": f"https://www.instagram.com/{handle}/",
-            "caption_snippet": profile.biography[:200],
-        })
+        if not user:
+            return {"status": "error", "error": f"Profile @{handle} not found", "breakage": True}
 
-    # Check last 12 posts
-    try:
-        for i, post in enumerate(profile.get_posts()):
-            if i >= 12:
-                break
-            caption_kw = _find_keywords(post.caption)
-            if caption_kw:
-                hits.append({
-                    "keyword": caption_kw,
-                    "post_url": f"https://www.instagram.com/p/{post.shortcode}/",
-                    "caption_snippet": (post.caption or "")[:200],
-                })
-            # Be polite to Instagram's servers
-            time.sleep(0.5)
-    except instaloader.exceptions.LoginRequiredException:
-        return {"status": "error", "error": "Instagram requires login to view posts", "breakage": True}
-    except instaloader.exceptions.TooManyRequestsException:
-        return {"status": "error", "error": "Rate limited by Instagram", "breakage": True}
+        user_id = user.get("id") or user.get("pk")
+        bio = user.get("biography") or ""
+        bio_kw = _find_keywords(bio)
+        if bio_kw:
+            hits.append({
+                "keyword": bio_kw,
+                "post_url": f"https://www.instagram.com/{handle}/",
+                "caption_snippet": bio[:200],
+            })
+
+        # Check recent posts via feed endpoint
+        if user_id:
+            feed = s.get(
+                f"https://i.instagram.com/api/v1/feed/user/{user_id}/",
+                params={"count": 12},
+                timeout=30,
+            )
+            feed.raise_for_status()
+            for item in (feed.json().get("items") or [])[:12]:
+                cap_obj = item.get("caption") or {}
+                caption = cap_obj.get("text") or ""
+                kw = _find_keywords(caption)
+                if kw:
+                    code = item.get("code") or item.get("shortcode") or ""
+                    hits.append({
+                        "keyword": kw,
+                        "post_url": f"https://www.instagram.com/p/{code}/",
+                        "caption_snippet": caption[:200],
+                    })
+                time.sleep(0.3)
+
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 0
+        if status in (401, 403):
+            return {"status": "error", "error": "Instagram session expired or invalid", "breakage": True}
+        if status == 429:
+            return {"status": "error", "error": "Rate limited by Instagram", "breakage": True}
+        return {"status": "error", "error": f"HTTP {status}: {e}", "breakage": False}
+    except requests.Timeout:
+        return {"status": "error", "error": "Request timed out", "breakage": False}
     except Exception as e:
         return {"status": "error", "error": str(e), "breakage": False}
 
