@@ -208,6 +208,35 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   animation: slide-in 0.15s ease;
 }
 .feed-entry:last-child { border-bottom: none; }
+.scan-current-post {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  min-height: 2rem;
+  overflow: hidden;
+}
+.scan-current-handle { font-weight: 600; color: var(--fg); flex-shrink: 0; }
+.scan-current-date { color: var(--muted); flex-shrink: 0; }
+.scan-current-caption {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scan-coverage {
+  padding: 0.45rem 1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 @keyframes slide-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }

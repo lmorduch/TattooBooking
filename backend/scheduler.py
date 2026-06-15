@@ -67,13 +67,23 @@ def check_all_artists(
             hits_by_handle: dict[str, list[dict]] = {}
             # last_post_by_handle: handle -> most recent post seen (url, taken_at)
             last_post_by_handle: dict[str, dict] = {}
+            # oldest post seen across the whole scan (to report coverage)
+            oldest_post: dict | None = None
 
             try:
                 for post in scraper.iter_timeline_posts(session_cookie):
+                    if oldest_post is None or post["taken_at"] < oldest_post["taken_at"]:
+                        oldest_post = post
+                    if emit:
+                        emit({
+                            "type": "scanning",
+                            "handle": post["username"],
+                            "taken_at": post["taken_at"].isoformat(),
+                            "caption_snippet": post["caption"][:80].strip(),
+                        })
                     handle = post["username"]
                     if handle not in artists_by_handle:
                         continue
-                    # Track the most recent post URL seen for this artist
                     existing = last_post_by_handle.get(handle)
                     if not existing or post["taken_at"] > existing["taken_at"]:
                         last_post_by_handle[handle] = post
@@ -134,7 +144,12 @@ def check_all_artists(
                     })
 
             if emit:
-                emit({"type": "done", "total": len(artists_by_handle)})
+                done_event: dict = {"type": "done", "total": len(artists_by_handle)}
+                if oldest_post:
+                    done_event["scanned_to"] = oldest_post["taken_at"].isoformat()
+                    done_event["scanned_to_handle"] = oldest_post["username"]
+                    done_event["scanned_to_preview"] = oldest_post["caption"][:120].strip()
+                emit(done_event)
 
     except Exception:
         logger.error("Scheduler run failed: %s", traceback.format_exc())

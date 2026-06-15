@@ -16,6 +16,7 @@ import {
 } from "../api";
 
 type HitEntry = { handle: string; hits: NonNullable<CheckEvent["hits"]> };
+type ScanMeta = { scanned_to: string; scanned_to_handle: string; scanned_to_preview: string };
 
 function statusLabel(status: Artist["last_status"]) {
   switch (status) {
@@ -42,11 +43,15 @@ function ScanResult({
   hits,
   watching,
   isRunning,
+  currentPost,
+  meta,
   onClose,
 }: {
   hits: HitEntry[];
   watching: number;
   isRunning: boolean;
+  currentPost: { handle: string; taken_at: string; caption_snippet: string } | null;
+  meta: ScanMeta | null;
   onClose: () => void;
 }) {
   return (
@@ -64,6 +69,16 @@ function ScanResult({
         )}
       </div>
 
+      {isRunning && currentPost && (
+        <div className="scan-current-post">
+          <span className="scan-current-handle">@{currentPost.handle}</span>
+          <span className="scan-current-date">{formatDate(currentPost.taken_at)}</span>
+          {currentPost.caption_snippet && (
+            <span className="scan-current-caption">"{currentPost.caption_snippet}"</span>
+          )}
+        </div>
+      )}
+
       {hits.length > 0 && (
         <div className="feed-entries">
           {hits.map((e, i) => (
@@ -74,6 +89,15 @@ function ScanResult({
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {!isRunning && meta && (
+        <div className="scan-coverage">
+          Scanned back to {formatDate(meta.scanned_to)}
+          {meta.scanned_to_handle && (
+            <> · last: @{meta.scanned_to_handle}{meta.scanned_to_preview ? `: "${meta.scanned_to_preview}"` : ""}</>
+          )}
         </div>
       )}
     </div>
@@ -188,6 +212,8 @@ export default function ArtistsPage() {
   const [isChecking, setIsChecking] = useState(false);
   const [showScan, setShowScan] = useState(false);
   const [checkError, setCheckError] = useState("");
+  const [scanMeta, setScanMeta] = useState<ScanMeta | null>(null);
+  const [currentPost, setCurrentPost] = useState<{ handle: string; taken_at: string; caption_snippet: string } | null>(null);
 
   const { data: artists, isLoading } = useQuery<Artist[]>({
     queryKey: ["artists"],
@@ -218,6 +244,8 @@ export default function ArtistsPage() {
     setScanHits([]);
     setWatching(0);
     setCheckError("");
+    setScanMeta(null);
+    setCurrentPost(null);
     setIsChecking(true);
     setShowScan(true);
 
@@ -225,8 +253,20 @@ export default function ArtistsPage() {
       (event) => {
         if (event.type === "start") {
           setWatching(event.watching ?? 0);
+        } else if (event.type === "scanning") {
+          setCurrentPost({
+            handle: event.handle!,
+            taken_at: event.taken_at!,
+            caption_snippet: event.caption_snippet ?? "",
+          });
         } else if (event.type === "result" && event.status === "hit") {
           setScanHits((prev) => [...prev, { handle: event.handle!, hits: event.hits ?? [] }]);
+        } else if (event.type === "done" && event.scanned_to) {
+          setScanMeta({
+            scanned_to: event.scanned_to,
+            scanned_to_handle: event.scanned_to_handle ?? "",
+            scanned_to_preview: event.scanned_to_preview ?? "",
+          });
         }
       },
       () => {
@@ -256,6 +296,8 @@ export default function ArtistsPage() {
           hits={scanHits}
           watching={watching}
           isRunning={isChecking}
+          currentPost={currentPost}
+          meta={scanMeta}
           onClose={() => setShowScan(false)}
         />
       )}
