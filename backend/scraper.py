@@ -56,16 +56,7 @@ def _get_loader(session_cookie: str = "") -> instaloader.Instaloader:
         _loader = _make_loader()
         _loader_username = session_cookie
         if session_cookie:
-            try:
-                _loader.context._session.cookies.update({"sessionid": session_cookie})
-                username = _loader.test_login()
-                if username:
-                    _loader.context.username = username
-                    logger.info("Loaded Instagram session for %s", username)
-                else:
-                    logger.warning("Instagram session cookie appears invalid")
-            except Exception as e:
-                logger.warning("Failed to load Instagram session: %s", e)
+            _loader.context._session.cookies.update({"sessionid": session_cookie})
 
     return _loader
 
