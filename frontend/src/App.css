@@ -219,6 +219,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   min-height: 2rem;
   overflow: hidden;
 }
+.scan-current-count { font-weight: 600; color: var(--muted); min-width: 2.5rem; flex-shrink: 0; }
 .scan-current-handle { font-weight: 600; color: var(--fg); flex-shrink: 0; }
 .scan-current-date { color: var(--muted); flex-shrink: 0; }
 .scan-current-caption {

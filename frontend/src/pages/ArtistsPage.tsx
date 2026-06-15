@@ -2,7 +2,7 @@
 // ABOUTME: Add/remove artists, toggle active, live check run feed.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   addArtist,
   deleteArtist,
@@ -44,6 +44,7 @@ function ScanResult({
   watching,
   isRunning,
   currentPost,
+  scanCount,
   meta,
   onClose,
 }: {
@@ -51,6 +52,7 @@ function ScanResult({
   watching: number;
   isRunning: boolean;
   currentPost: { handle: string; taken_at: string; caption_snippet: string } | null;
+  scanCount: number;
   meta: ScanMeta | null;
   onClose: () => void;
 }) {
@@ -69,12 +71,19 @@ function ScanResult({
         )}
       </div>
 
-      {isRunning && currentPost && (
+      {isRunning && (
         <div className="scan-current-post">
-          <span className="scan-current-handle">@{currentPost.handle}</span>
-          <span className="scan-current-date">{formatDate(currentPost.taken_at)}</span>
-          {currentPost.caption_snippet && (
-            <span className="scan-current-caption">"{currentPost.caption_snippet}"</span>
+          {currentPost ? (
+            <>
+              <span className="scan-current-count">{scanCount}</span>
+              <span className="scan-current-handle">@{currentPost.handle}</span>
+              <span className="scan-current-date">{formatDate(currentPost.taken_at)}</span>
+              {currentPost.caption_snippet && (
+                <span className="scan-current-caption">"{currentPost.caption_snippet}"</span>
+              )}
+            </>
+          ) : (
+            <span className="scan-current-handle">connecting…</span>
           )}
         </div>
       )}
@@ -214,6 +223,9 @@ export default function ArtistsPage() {
   const [checkError, setCheckError] = useState("");
   const [scanMeta, setScanMeta] = useState<ScanMeta | null>(null);
   const [currentPost, setCurrentPost] = useState<{ handle: string; taken_at: string; caption_snippet: string } | null>(null);
+  const [scanCount, setScanCount] = useState(0);
+  const pendingPostRef = useRef<{ handle: string; taken_at: string; caption_snippet: string } | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   const { data: artists, isLoading } = useQuery<Artist[]>({
     queryKey: ["artists"],
@@ -246,6 +258,9 @@ export default function ArtistsPage() {
     setCheckError("");
     setScanMeta(null);
     setCurrentPost(null);
+    setScanCount(0);
+    pendingPostRef.current = null;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
     setIsChecking(true);
     setShowScan(true);
 
@@ -254,11 +269,18 @@ export default function ArtistsPage() {
         if (event.type === "start") {
           setWatching(event.watching ?? 0);
         } else if (event.type === "scanning") {
-          setCurrentPost({
+          pendingPostRef.current = {
             handle: event.handle!,
             taken_at: event.taken_at!,
             caption_snippet: event.caption_snippet ?? "",
-          });
+          };
+          setScanCount((n) => n + 1);
+          if (!rafRef.current) {
+            rafRef.current = requestAnimationFrame(() => {
+              rafRef.current = null;
+              setCurrentPost(pendingPostRef.current);
+            });
+          }
         } else if (event.type === "result" && event.status === "hit") {
           setScanHits((prev) => [...prev, { handle: event.handle!, hits: event.hits ?? [] }]);
         } else if (event.type === "done" && event.scanned_to) {
@@ -297,6 +319,7 @@ export default function ArtistsPage() {
           watching={watching}
           isRunning={isChecking}
           currentPost={currentPost}
+          scanCount={scanCount}
           meta={scanMeta}
           onClose={() => setShowScan(false)}
         />
