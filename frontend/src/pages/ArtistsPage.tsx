@@ -17,6 +17,7 @@ import {
 
 type HitEntry = { handle: string; hits: NonNullable<CheckEvent["hits"]> };
 type ScanMeta = { scanned_to: string; scanned_to_handle: string; scanned_to_preview: string };
+type LogLine = { level: string; message: string };
 
 function statusLabel(status: Artist["last_status"]) {
   switch (status) {
@@ -45,6 +46,7 @@ function ScanResult({
   isRunning,
   currentPost,
   scanCount,
+  logs,
   meta,
   onClose,
 }: {
@@ -53,6 +55,7 @@ function ScanResult({
   isRunning: boolean;
   currentPost: { handle: string; taken_at: string; caption_snippet: string } | null;
   scanCount: number;
+  logs: LogLine[];
   meta: ScanMeta | null;
   onClose: () => void;
 }) {
@@ -96,6 +99,16 @@ function ScanResult({
               <span className="feed-status hit">
                 📬 {e.hits.map(h => `"${h.keyword}"`).join(", ")}
               </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {logs.length > 0 && (
+        <div className="scan-logs">
+          {logs.map((l, i) => (
+            <div key={i} className={`scan-log-line scan-log-${l.level.toLowerCase()}`}>
+              {l.message}
             </div>
           ))}
         </div>
@@ -223,6 +236,7 @@ export default function ArtistsPage() {
   const [checkError, setCheckError] = useState("");
   const [scanMeta, setScanMeta] = useState<ScanMeta | null>(null);
   const [currentPost, setCurrentPost] = useState<{ handle: string; taken_at: string; caption_snippet: string } | null>(null);
+  const [scanLogs, setScanLogs] = useState<LogLine[]>([]);
   const [scanCount, setScanCount] = useState(0);
   const pendingPostRef = useRef<{ handle: string; taken_at: string; caption_snippet: string } | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -259,6 +273,7 @@ export default function ArtistsPage() {
     setScanMeta(null);
     setCurrentPost(null);
     setScanCount(0);
+    setScanLogs([]);
     pendingPostRef.current = null;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     setIsChecking(true);
@@ -268,6 +283,8 @@ export default function ArtistsPage() {
       (event) => {
         if (event.type === "start") {
           setWatching(event.watching ?? 0);
+        } else if (event.type === "log") {
+          setScanLogs((prev) => [...prev, { level: event.level ?? "INFO", message: event.message ?? "" }]);
         } else if (event.type === "scanning") {
           pendingPostRef.current = {
             handle: event.handle!,
@@ -320,6 +337,7 @@ export default function ArtistsPage() {
           isRunning={isChecking}
           currentPost={currentPost}
           scanCount={scanCount}
+          logs={scanLogs}
           meta={scanMeta}
           onClose={() => setShowScan(false)}
         />

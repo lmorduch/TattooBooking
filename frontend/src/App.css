@@ -228,6 +228,18 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.scan-logs {
+  max-height: 300px;
+  overflow-y: auto;
+  background: #1a1a1a;
+  padding: 0.5rem 0.75rem;
+  font-family: monospace;
+  font-size: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.scan-log-line { color: #ccc; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
+.scan-log-warning { color: #f0ad4e; }
+.scan-log-error { color: #e74c3c; }
 .scan-coverage {
   padding: 0.45rem 1rem;
   font-size: 0.78rem;

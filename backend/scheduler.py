@@ -22,6 +22,19 @@ logger = logging.getLogger(__name__)
 
 _scheduler = BackgroundScheduler()
 
+class _EmitLogHandler(logging.Handler):
+    """Forwards log records to the SSE stream as log events."""
+    def __init__(self, emit_fn: Callable[[dict], None]):
+        super().__init__()
+        self._emit = emit_fn
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            self._emit({"type": "log", "level": record.levelname, "message": self.format(record)})
+        except Exception:
+            pass
+
+
 def check_all_artists(
     emit: Callable[[dict], None] | None = None,
     user_id_filter: int | None = None,
@@ -30,6 +43,12 @@ def check_all_artists(
     Scan the user's Instagram following feed (timeline) for booking keywords.
     One timeline fetch covers all followed artists at once — no per-profile API calls.
     """
+    log_handler: _EmitLogHandler | None = None
+    if emit:
+        log_handler = _EmitLogHandler(emit)
+        log_handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+        logging.getLogger().addHandler(log_handler)
+
     logger.info("Starting timeline check run")
     db: Session = SessionLocal()
     try:
@@ -167,6 +186,8 @@ def check_all_artists(
     finally:
         db.close()
         logger.info("Timeline check run complete")
+        if log_handler:
+            logging.getLogger().removeHandler(log_handler)
 
 
 def start() -> None:

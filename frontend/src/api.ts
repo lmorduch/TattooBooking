@@ -72,7 +72,8 @@ export async function getChecks(artistId: number): Promise<CheckResult[]> {
 }
 
 export interface CheckEvent {
-  type: "start" | "scanning" | "result" | "done" | "error";
+  type: "start" | "scanning" | "result" | "done" | "error" | "log";
+  level?: string;
   taken_at?: string;
   handle?: string;
   status?: "hit" | "error";
