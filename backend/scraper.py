@@ -252,29 +252,26 @@ def iter_timeline_posts(session_cookie: str, hours_back: int = 48):
     """
     Yields posts from the chronological Instagram following feed.
     Uses a headless browser to load /?variant=following and intercepts
-    the GraphQL/API responses to extract post data.
+    the API responses to extract post data.
     Each yielded item: {"username", "caption", "post_url", "taken_at"}
     """
-    import asyncio
     from datetime import datetime, timezone, timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
-    posts = asyncio.run(_fetch_following_posts(session_cookie, cutoff))
+    posts = _fetch_following_posts_sync(session_cookie, cutoff)
     yield from posts
 
 
-async def _fetch_following_posts(session_cookie: str, cutoff) -> list[dict]:
-    from playwright.async_api import async_playwright
+def _fetch_following_posts_sync(session_cookie: str, cutoff) -> list[dict]:
+    from playwright.sync_api import sync_playwright
     from datetime import datetime, timezone
-    import json
 
     collected: list[dict] = []
     seen_codes: set[str] = set()
+    intercepted_urls: list[str] = []
 
     def _extract_posts_from_json(obj) -> list[dict]:
-        """Recursively find media objects with taken_at + username in any JSON shape."""
         results = []
         if isinstance(obj, dict):
-            # Mobile API shape: has taken_at + user.username + code
             taken_at = obj.get("taken_at")
             user = obj.get("user") or {}
             username = user.get("username") or obj.get("username") or ""
@@ -296,9 +293,7 @@ async def _fetch_following_posts(session_cookie: str, cutoff) -> list[dict]:
                 results.extend(_extract_posts_from_json(item))
         return results
 
-    intercepted_urls: list[str] = []
-
-    async def handle_response(response):
+    def handle_response(response):
         url = response.url
         if "instagram.com" not in url:
             return
@@ -306,7 +301,7 @@ async def _fetch_following_posts(session_cookie: str, cutoff) -> list[dict]:
             return
         intercepted_urls.append(url)
         try:
-            body = await response.json()
+            body = response.json()
             before = len(collected)
             for post in _extract_posts_from_json(body):
                 if post["code"] not in seen_codes:
@@ -316,18 +311,19 @@ async def _fetch_following_posts(session_cookie: str, cutoff) -> list[dict]:
             if found:
                 logger.info("Playwright: +%d posts from %s (total %d)", found, url, len(collected))
         except Exception as e:
-            logger.debug("Playwright: could not parse response from %s: %s", url, e)
+            logger.debug("Playwright: could not parse %s: %s", url, e)
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
+    logger.info("Playwright: launching browser")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
             headless=True,
             args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
-        ctx = await browser.new_context(
+        ctx = browser.new_context(
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 900},
         )
-        await ctx.add_cookies([{
+        ctx.add_cookies([{
             "name": "sessionid",
             "value": session_cookie,
             "domain": ".instagram.com",
@@ -335,47 +331,42 @@ async def _fetch_following_posts(session_cookie: str, cutoff) -> list[dict]:
             "secure": True,
         }])
 
-        page = await ctx.new_page()
+        page = ctx.new_page()
         page.on("response", handle_response)
 
         logger.info("Playwright: navigating to following feed")
         try:
-            await page.goto("https://www.instagram.com/?variant=following", wait_until="networkidle", timeout=30000)
+            page.goto("https://www.instagram.com/?variant=following", wait_until="networkidle", timeout=30000)
         except Exception as e:
-            logger.warning("Playwright: goto timed out or errored (%s), continuing anyway", e)
-        await page.wait_for_timeout(3000)
+            logger.warning("Playwright: goto error (%s), continuing", e)
 
-        title = await page.title()
-        url_now = page.url
-        logger.info("Playwright: page loaded — title=%r url=%s", title, url_now)
-        logger.info("Playwright: intercepted %d API responses so far, %d posts collected", len(intercepted_urls), len(collected))
-        if intercepted_urls:
-            for u in intercepted_urls[:10]:
-                logger.info("Playwright:   response url: %s", u)
+        page.wait_for_timeout(3000)
+        logger.info("Playwright: page title=%r url=%s", page.title(), page.url)
+        logger.info("Playwright: %d API responses intercepted, %d posts so far", len(intercepted_urls), len(collected))
+        for u in intercepted_urls[:10]:
+            logger.info("Playwright:   %s", u)
 
-        # Scroll until we've gone past the cutoff or run out of content
         prev_count = 0
         stall_count = 0
         for i in range(30):
             oldest = min((p["taken_at"] for p in collected), default=None)
             if oldest and oldest < cutoff:
-                logger.info("Playwright: hit cutoff at %s after %d scrolls", oldest, i)
+                logger.info("Playwright: hit cutoff after %d scrolls", i)
                 break
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await page.wait_for_timeout(2000)
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(2000)
             if len(collected) == prev_count:
                 stall_count += 1
                 if stall_count >= 3:
-                    logger.info("Playwright: stalled after %d scrolls with %d posts", i, len(collected))
+                    logger.info("Playwright: stalled at %d posts after %d scrolls", len(collected), i)
                     break
             else:
                 stall_count = 0
             prev_count = len(collected)
 
-        logger.info("Playwright: done — %d posts collected, %d API responses intercepted", len(collected), len(intercepted_urls))
-        await browser.close()
+        logger.info("Playwright: done — %d posts, %d responses", len(collected), len(intercepted_urls))
+        browser.close()
 
-    # Sort newest-first, filter to cutoff window
     collected.sort(key=lambda p: p["taken_at"], reverse=True)
     return [p for p in collected if p["taken_at"] >= cutoff]
 
