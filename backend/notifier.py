@@ -23,7 +23,7 @@ def _send(subject: str, body: str) -> None:
     try:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
             server.starttls()
-            server.login(settings.smtp_user, settings.smtp_password)
+            server.login(settings.smtp_user, settings.smtp_password.replace(" ", ""))
             server.sendmail(settings.smtp_user, settings.notify_email, msg.as_string())
         logger.info("Sent email: %s", subject)
     except Exception as e:
