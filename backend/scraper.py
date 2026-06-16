@@ -296,20 +296,27 @@ async def _fetch_following_posts(session_cookie: str, cutoff) -> list[dict]:
                 results.extend(_extract_posts_from_json(item))
         return results
 
+    intercepted_urls: list[str] = []
+
     async def handle_response(response):
         url = response.url
         if "instagram.com" not in url:
             return
         if not any(x in url for x in ("graphql", "api/v1/feed", "api/v1/user")):
             return
+        intercepted_urls.append(url)
         try:
             body = await response.json()
+            before = len(collected)
             for post in _extract_posts_from_json(body):
                 if post["code"] not in seen_codes:
                     seen_codes.add(post["code"])
                     collected.append(post)
-        except Exception:
-            pass
+            found = len(collected) - before
+            if found:
+                logger.info("Playwright: +%d posts from %s (total %d)", found, url, len(collected))
+        except Exception as e:
+            logger.debug("Playwright: could not parse response from %s: %s", url, e)
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -331,29 +338,41 @@ async def _fetch_following_posts(session_cookie: str, cutoff) -> list[dict]:
         page = await ctx.new_page()
         page.on("response", handle_response)
 
-        logger.info("Playwright: loading following feed")
-        await page.goto("https://www.instagram.com/?variant=following", wait_until="networkidle", timeout=30000)
+        logger.info("Playwright: navigating to following feed")
+        try:
+            await page.goto("https://www.instagram.com/?variant=following", wait_until="networkidle", timeout=30000)
+        except Exception as e:
+            logger.warning("Playwright: goto timed out or errored (%s), continuing anyway", e)
         await page.wait_for_timeout(3000)
+
+        title = await page.title()
+        url_now = page.url
+        logger.info("Playwright: page loaded — title=%r url=%s", title, url_now)
+        logger.info("Playwright: intercepted %d API responses so far, %d posts collected", len(intercepted_urls), len(collected))
+        if intercepted_urls:
+            for u in intercepted_urls[:10]:
+                logger.info("Playwright:   response url: %s", u)
 
         # Scroll until we've gone past the cutoff or run out of content
         prev_count = 0
         stall_count = 0
-        for _ in range(30):
+        for i in range(30):
             oldest = min((p["taken_at"] for p in collected), default=None)
             if oldest and oldest < cutoff:
-                logger.info("Playwright: hit cutoff at %s", oldest)
+                logger.info("Playwright: hit cutoff at %s after %d scrolls", oldest, i)
                 break
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             await page.wait_for_timeout(2000)
             if len(collected) == prev_count:
                 stall_count += 1
                 if stall_count >= 3:
-                    logger.info("Playwright: no new posts after 3 scrolls, stopping")
+                    logger.info("Playwright: stalled after %d scrolls with %d posts", i, len(collected))
                     break
             else:
                 stall_count = 0
             prev_count = len(collected)
 
+        logger.info("Playwright: done — %d posts collected, %d API responses intercepted", len(collected), len(intercepted_urls))
         await browser.close()
 
     # Sort newest-first, filter to cutoff window
