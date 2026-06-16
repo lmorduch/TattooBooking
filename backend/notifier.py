@@ -21,8 +21,7 @@ def _send(subject: str, body: str) -> None:
     msg["To"] = settings.notify_email
 
     try:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-            server.starttls()
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(settings.smtp_user, settings.smtp_password.replace(" ", ""))
             server.sendmail(settings.smtp_user, settings.notify_email, msg.as_string())
         logger.info("Sent email: %s", subject)
