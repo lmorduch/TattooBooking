@@ -44,6 +44,7 @@ function ScanResult({
   hits,
   watching,
   isRunning,
+  scanStatus,
   currentPost,
   scanCount,
   logs,
@@ -53,6 +54,7 @@ function ScanResult({
   hits: HitEntry[];
   watching: number;
   isRunning: boolean;
+  scanStatus: string;
   currentPost: { handle: string; taken_at: string; caption_snippet: string } | null;
   scanCount: number;
   logs: LogLine[];
@@ -75,18 +77,19 @@ function ScanResult({
       </div>
 
       {isRunning && (
-        <div className="scan-current-post">
-          {currentPost ? (
-            <>
-              <span className="scan-current-count">{scanCount}</span>
+        <div className="scan-progress">
+          <div className="scan-status-line">
+            {scanStatus || "connecting…"}
+          </div>
+          {currentPost && (
+            <div className="scan-current-post">
+              <span className="scan-current-count">{scanCount} watched</span>
               <span className="scan-current-handle">@{currentPost.handle}</span>
               <span className="scan-current-date">{formatDate(currentPost.taken_at)}</span>
               {currentPost.caption_snippet && (
                 <span className="scan-current-caption">"{currentPost.caption_snippet}"</span>
               )}
-            </>
-          ) : (
-            <span className="scan-current-handle">connecting…</span>
+            </div>
           )}
         </div>
       )}
@@ -237,6 +240,7 @@ export default function ArtistsPage() {
   const [scanMeta, setScanMeta] = useState<ScanMeta | null>(null);
   const [currentPost, setCurrentPost] = useState<{ handle: string; taken_at: string; caption_snippet: string } | null>(null);
   const [scanLogs, setScanLogs] = useState<LogLine[]>([]);
+  const [scanStatus, setScanStatus] = useState("");
   const [scanCount, setScanCount] = useState(0);
   const pendingPostRef = useRef<{ handle: string; taken_at: string; caption_snippet: string } | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -274,6 +278,7 @@ export default function ArtistsPage() {
     setCurrentPost(null);
     setScanCount(0);
     setScanLogs([]);
+    setScanStatus("");
     pendingPostRef.current = null;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     setIsChecking(true);
@@ -283,6 +288,8 @@ export default function ArtistsPage() {
       (event) => {
         if (event.type === "start") {
           setWatching(event.watching ?? 0);
+        } else if (event.type === "status") {
+          setScanStatus(event.message ?? "");
         } else if (event.type === "log") {
           setScanLogs((prev) => [...prev, { level: event.level ?? "INFO", message: event.message ?? "" }]);
         } else if (event.type === "scanning") {
@@ -335,6 +342,7 @@ export default function ArtistsPage() {
           hits={scanHits}
           watching={watching}
           isRunning={isChecking}
+          scanStatus={scanStatus}
           currentPost={currentPost}
           scanCount={scanCount}
           logs={scanLogs}

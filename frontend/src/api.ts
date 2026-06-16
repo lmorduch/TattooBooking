@@ -72,7 +72,7 @@ export async function getChecks(artistId: number): Promise<CheckResult[]> {
 }
 
 export interface CheckEvent {
-  type: "start" | "scanning" | "result" | "done" | "error" | "log";
+  type: "start" | "status" | "scanning" | "result" | "done" | "error" | "log";
   level?: string;
   taken_at?: string;
   handle?: string;

@@ -208,18 +208,26 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   animation: slide-in 0.15s ease;
 }
 .feed-entry:last-child { border-bottom: none; }
+.scan-progress {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.scan-status-line {
+  padding: 0.45rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fg);
+  border-bottom: 1px solid #f1f3f5;
+}
 .scan-current-post {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
-  padding: 0.4rem 1rem;
-  font-size: 0.8rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-  min-height: 2rem;
+  padding: 0.3rem 1rem;
+  font-size: 0.78rem;
   overflow: hidden;
 }
-.scan-current-count { font-weight: 600; color: var(--muted); min-width: 2.5rem; flex-shrink: 0; }
+.scan-current-count { color: var(--muted); flex-shrink: 0; }
 .scan-current-handle { font-weight: 600; color: var(--fg); flex-shrink: 0; }
 .scan-current-date { color: var(--muted); flex-shrink: 0; }
 .scan-current-caption {

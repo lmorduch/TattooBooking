@@ -90,21 +90,26 @@ def check_all_artists(
             oldest_post: dict | None = None
             posts_scanned = 0
 
+            def _status_cb(msg: str):
+                if emit:
+                    emit({"type": "status", "message": msg})
+
             try:
-                for post in scraper.iter_timeline_posts(session_cookie):
+                for post in scraper.iter_timeline_posts(session_cookie, status_cb=_status_cb):
                     posts_scanned += 1
                     if oldest_post is None or post["taken_at"] < oldest_post["taken_at"]:
                         oldest_post = post
-                    if emit:
-                        emit({
-                            "type": "scanning",
-                            "handle": post["username"],
-                            "taken_at": post["taken_at"].strftime("%Y-%m-%dT%H:%M:%SZ"),
-                            "caption_snippet": post["caption"][:80].strip(),
-                        })
                     handle = post["username"]
                     if handle not in artists_by_handle:
                         continue
+                    # Emit scanning only for watched artists — meaningful signal
+                    if emit:
+                        emit({
+                            "type": "scanning",
+                            "handle": handle,
+                            "taken_at": post["taken_at"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            "caption_snippet": post["caption"][:80].strip(),
+                        })
                     existing = last_post_by_handle.get(handle)
                     if not existing or post["taken_at"] > existing["taken_at"]:
                         last_post_by_handle[handle] = post

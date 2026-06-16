@@ -99,7 +99,7 @@ export default function SettingsPage({ user }: { user: User }) {
         <div className="settings-section">
           <h2>Import Following List</h2>
           <p className="hint">
-            Adds everyone you follow on Instagram as a tracked artist. Already-tracked accounts are skipped.
+            Seeds your watchlist from everyone you follow on Instagram. The feed scanner checks posts from your watchlist — run this once to populate it. Already-tracked accounts are skipped.
           </p>
 
           <button onClick={handleImport} disabled={importState.status === "running"}>
