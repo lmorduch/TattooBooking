@@ -100,16 +100,16 @@ def check_all_artists(
                     if oldest_post is None or post["taken_at"] < oldest_post["taken_at"]:
                         oldest_post = post
                     handle = post["username"]
-                    if handle not in artists_by_handle:
-                        continue
-                    # Emit scanning only for watched artists — meaningful signal
                     if emit:
                         emit({
                             "type": "scanning",
                             "handle": handle,
                             "taken_at": post["taken_at"].strftime("%Y-%m-%dT%H:%M:%SZ"),
                             "caption_snippet": post["caption"][:80].strip(),
+                            "watched": handle in artists_by_handle,
                         })
+                    if handle not in artists_by_handle:
+                        continue
                     existing = last_post_by_handle.get(handle)
                     if not existing or post["taken_at"] > existing["taken_at"]:
                         last_post_by_handle[handle] = post

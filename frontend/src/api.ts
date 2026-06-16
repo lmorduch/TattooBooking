@@ -78,6 +78,7 @@ export interface CheckEvent {
   handle?: string;
   status?: "hit" | "error";
   hits?: Array<{ keyword: string; post_url?: string; caption_snippet?: string }>;
+  watched?: boolean;
   error?: string;
   watching?: number;
   message?: string;

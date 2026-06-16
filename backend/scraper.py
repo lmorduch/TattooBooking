@@ -250,19 +250,38 @@ def _user_id_from_cookie(session_cookie: str) -> str:
 
 def iter_timeline_posts(session_cookie: str, hours_back: int = 48, status_cb=None):
     """
-    Yields posts from the chronological Instagram following feed.
+    Yields posts from the chronological Instagram following feed in real time.
     Uses a headless browser to load /?variant=following and intercepts
     the API responses to extract post data.
     Each yielded item: {"username", "caption", "post_url", "taken_at"}
     status_cb(message) is called with human-readable progress strings during the fetch.
+    Posts are yielded as they arrive from each scroll, not after the full session.
     """
+    import queue
+    import threading
     from datetime import datetime, timezone, timedelta
+
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
-    posts = _fetch_following_posts_sync(session_cookie, cutoff, status_cb=status_cb)
-    yield from posts
+    q: queue.Queue = queue.Queue()
+
+    def _run():
+        try:
+            _fetch_following_posts_sync(session_cookie, cutoff, status_cb=status_cb, post_cb=q.put)
+        except Exception as e:
+            logger.error("Playwright thread error: %s", e)
+        finally:
+            q.put(None)  # sentinel
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    while True:
+        post = q.get()
+        if post is None:
+            break
+        yield post
 
 
-def _fetch_following_posts_sync(session_cookie: str, cutoff, status_cb=None) -> list[dict]:
+def _fetch_following_posts_sync(session_cookie: str, cutoff, status_cb=None, post_cb=None) -> None:
     from playwright.sync_api import sync_playwright
     from datetime import datetime, timezone
 
@@ -271,8 +290,8 @@ def _fetch_following_posts_sync(session_cookie: str, cutoff, status_cb=None) -> 
         if status_cb:
             status_cb(msg)
 
-    collected: list[dict] = []
     seen_codes: set[str] = set()
+    total_count = [0]
 
     def _extract_posts_from_json(obj) -> list[dict]:
         results = []
@@ -306,14 +325,16 @@ def _fetch_following_posts_sync(session_cookie: str, cutoff, status_cb=None) -> 
             return
         try:
             body = response.json()
-            before = len(collected)
+            found = 0
             for post in _extract_posts_from_json(body):
-                if post["code"] not in seen_codes:
+                if post["code"] not in seen_codes and post["taken_at"] >= cutoff:
                     seen_codes.add(post["code"])
-                    collected.append(post)
-            found = len(collected) - before
+                    total_count[0] += 1
+                    found += 1
+                    if post_cb:
+                        post_cb(post)
             if found:
-                logger.info("Playwright: +%d posts from response (total %d)", found, len(collected))
+                logger.info("Playwright: +%d posts from response (total %d)", found, total_count[0])
         except Exception as e:
             logger.debug("Playwright: could not parse response: %s", e)
 
@@ -351,27 +372,20 @@ def _fetch_following_posts_sync(session_cookie: str, cutoff, status_cb=None) -> 
         prev_count = 0
         stall_count = 0
         for i in range(30):
-            oldest = min((p["taken_at"] for p in collected), default=None)
-            if oldest and oldest < cutoff:
-                status(f"Hit cutoff ({oldest:%b %d %H:%M UTC}) after {i} scrolls — {len(collected)} posts total")
-                break
-            status(f"Scroll {i + 1} — {len(collected)} posts seen")
+            status(f"Scroll {i + 1} — {total_count[0]} posts seen")
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             page.wait_for_timeout(2000)
-            if len(collected) == prev_count:
+            if total_count[0] == prev_count:
                 stall_count += 1
                 if stall_count >= 3:
-                    status(f"No new posts after 3 scrolls — stopping at {len(collected)} posts")
+                    status(f"No new posts after 3 scrolls — stopping at {total_count[0]} posts")
                     break
             else:
                 stall_count = 0
-            prev_count = len(collected)
+            prev_count = total_count[0]
 
-        status(f"Done — {len(collected)} posts collected")
+        status(f"Done — {total_count[0]} posts collected")
         browser.close()
-
-    collected.sort(key=lambda p: p["taken_at"], reverse=True)
-    return [p for p in collected if p["taken_at"] >= cutoff]
 
 
 def iter_following(session_cookie: str):

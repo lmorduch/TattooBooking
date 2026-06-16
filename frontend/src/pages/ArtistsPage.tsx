@@ -83,7 +83,7 @@ function ScanResult({
           </div>
           {currentPost && (
             <div className="scan-current-post">
-              <span className="scan-current-count">{scanCount} watched</span>
+              <span className="scan-current-count">#{scanCount}</span>
               <span className="scan-current-handle">@{currentPost.handle}</span>
               <span className="scan-current-date">{formatDate(currentPost.taken_at)}</span>
               {currentPost.caption_snippet && (
