@@ -367,7 +367,7 @@ def _fetch_following_posts_sync(session_cookie: str, cutoff, status_cb=None, pos
 
         page.wait_for_timeout(3000)
         title = page.title()
-        status(f"Page loaded: {title!r} — {len(collected)} posts so far")
+        status(f"Page loaded: {title!r} — {total_count[0]} posts so far")
 
         prev_count = 0
         stall_count = 0
