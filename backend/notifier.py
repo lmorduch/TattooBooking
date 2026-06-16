@@ -36,12 +36,13 @@ def _send(subject: str, body: str) -> None:
 def notify_hit(handle: str, hits: list[dict]) -> None:
     lines = [f"@{handle} may have books open!\n"]
     for h in hits:
-        lines.append(f"Keyword: {h['keyword']}")
-        if h.get("post_url"):
-            lines.append(f"Post: {h['post_url']}")
+        lines.append(f"Keyword: \"{h['keyword']}\"")
         if h.get("caption_snippet"):
             lines.append(f'Caption: "{h["caption_snippet"]}"')
+        if h.get("post_url"):
+            lines.append(f"Link: {h['post_url']}")
         lines.append("")
+    lines.append(f"Instagram profile: https://www.instagram.com/{handle}/")
     _send(f"🎨 Books may be open: @{handle}", "\n".join(lines))
 
 
