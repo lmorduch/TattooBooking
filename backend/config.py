@@ -8,10 +8,7 @@ class Settings(BaseSettings):
     database_url: str
 
     # Email notifications
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
+    resend_api_key: str = ""
     notify_email: str = ""
 
     # Optional Instagram credentials — improves reliability, avoids rate limits

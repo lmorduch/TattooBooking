@@ -1,9 +1,9 @@
-# ABOUTME: Email notification sender using SMTP.
+# ABOUTME: Email notification sender using Resend's HTTP API.
 # ABOUTME: Sends alerts for booking hits and scraper breakage.
 
 import logging
-import smtplib
-from email.mime.text import MIMEText
+
+import requests
 
 from config import settings
 
@@ -11,19 +11,23 @@ logger = logging.getLogger(__name__)
 
 
 def _send(subject: str, body: str) -> None:
-    if not settings.smtp_user or not settings.notify_email:
+    if not settings.resend_api_key or not settings.notify_email:
         logger.warning("Email not configured — skipping notification: %s", subject)
         return
 
-    msg = MIMEText(body, "plain")
-    msg["Subject"] = subject
-    msg["From"] = settings.smtp_user
-    msg["To"] = settings.notify_email
-
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(settings.smtp_user, settings.smtp_password.replace(" ", ""))
-            server.sendmail(settings.smtp_user, settings.notify_email, msg.as_string())
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+            json={
+                "from": "TattooTracker <onboarding@resend.dev>",
+                "to": [settings.notify_email],
+                "subject": subject,
+                "text": body,
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
         logger.info("Sent email: %s", subject)
     except Exception as e:
         logger.error("Failed to send email '%s': %s", subject, e)
