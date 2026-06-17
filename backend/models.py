@@ -59,5 +59,6 @@ class CheckResult(Base):
     post_url: Mapped[str | None] = mapped_column(String, nullable=True)
     caption_snippet: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    notified: Mapped[bool] = mapped_column(Boolean, default=False)
 
     artist: Mapped["Artist"] = relationship("Artist", back_populates="check_results")

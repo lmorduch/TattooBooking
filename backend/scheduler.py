@@ -150,7 +150,6 @@ def check_all_artists(
                             caption_snippet=hit.get("caption_snippet"),
                         ))
                     db.commit()
-                    notifier.notify_hit(handle, hits)
                 else:
                     artist.consecutive_errors = 0
                     artist.last_status = "ok"
@@ -169,11 +168,34 @@ def check_all_artists(
                         "total": len(artists_by_handle),
                     })
 
-            notifier.notify_scan_complete(
-                total_posts=posts_scanned,
-                hits_by_handle=hits_by_handle,
-                scanned_to=oldest_post["taken_at"].strftime("%Y-%m-%d %H:%M UTC") if oldest_post else None,
+            # Collect unnotified hits and mark them notified in one pass
+            new_hits_by_handle: dict[str, list[dict]] = {}
+            unnotified = (
+                db.query(models.CheckResult)
+                .join(models.Artist)
+                .filter(
+                    models.Artist.user_id == uid,
+                    models.CheckResult.status == "hit",
+                    models.CheckResult.notified == False,  # noqa: E712
+                )
+                .all()
             )
+            for result in unnotified:
+                handle = result.artist.handle
+                new_hits_by_handle.setdefault(handle, []).append({
+                    "keyword": result.keyword_found,
+                    "post_url": result.post_url,
+                    "caption_snippet": result.caption_snippet,
+                })
+                result.notified = True
+            db.commit()
+
+            if new_hits_by_handle:
+                notifier.notify_scan_complete(
+                    total_posts=posts_scanned,
+                    hits_by_handle=new_hits_by_handle,
+                    scanned_to=oldest_post["taken_at"].strftime("%Y-%m-%d %H:%M UTC") if oldest_post else None,
+                )
 
             if emit:
                 done_event: dict = {"type": "done", "total": len(artists_by_handle)}
