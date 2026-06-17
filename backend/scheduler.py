@@ -141,7 +141,16 @@ def check_all_artists(
                 if hits:
                     artist.consecutive_errors = 0
                     artist.last_status = "hit"
+                    already_seen = {
+                        r.post_url
+                        for r in db.query(models.CheckResult.post_url)
+                        .filter_by(artist_id=artist.id, status="hit")
+                        .all()
+                        if r.post_url
+                    }
                     for hit in hits:
+                        if hit.get("post_url") in already_seen:
+                            continue
                         db.add(models.CheckResult(
                             artist_id=artist.id,
                             status="hit",
