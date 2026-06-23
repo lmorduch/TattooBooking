@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     instagram_password: str = ""
 
     # How often to run the timeline check (in hours)
-    check_interval_hours: int = 2
+    check_interval_hours: int = 24
 
     class Config:
         env_file = ".env"
