@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 import models
 import scheduler
+from config import settings
 from auth import COOKIE_NAME, FRONTEND_URL, exchange_code, get_current_user, login_url, make_jwt
 from crypto import decrypt, encrypt
 from database import Base, engine, get_db
@@ -43,9 +44,13 @@ async def lifespan(app: FastAPI):
     # Run DB migration in background so uvicorn can start serving /health immediately.
     # On existing deployments these are all IF NOT EXISTS no-ops and complete in milliseconds.
     threading.Thread(target=_run_migrations, daemon=True).start()
-    scheduler.start()
+    # Scans run from the Railway cron service (run_scan.py); the in-app
+    # scheduler is off in prod so the web service can sleep when idle.
+    if settings.scheduler_enabled:
+        scheduler.start()
     yield
-    scheduler.stop()
+    if settings.scheduler_enabled:
+        scheduler.stop()
 
 
 app = FastAPI(title="Tattoo Tracker", lifespan=lifespan)

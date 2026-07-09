@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # How often to run the timeline check (in hours)
     check_interval_hours: int = 24
 
+    # In-app APScheduler; disabled in prod where the Railway cron service runs scans
+    scheduler_enabled: bool = True
+
     class Config:
         env_file = ".env"
         extra = "ignore"

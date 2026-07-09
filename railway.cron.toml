@@ -1,0 +1,7 @@
+# ABOUTME: Railway config for the daily scan cron service (scan-cron).
+# ABOUTME: Runs run_scan.py once per day and exits; no healthcheck, no restarts.
+
+[deploy]
+cronSchedule = "0 14 * * *"
+startCommand = "python run_scan.py"
+restartPolicyType = "NEVER"
