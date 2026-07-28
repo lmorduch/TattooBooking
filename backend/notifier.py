@@ -62,6 +62,19 @@ def notify_scan_complete(total_posts: int, hits_by_handle: dict, scanned_to: str
     _send(subject, "\n".join(lines))
 
 
+def notify_session_expired() -> None:
+    body = (
+        "The saved Instagram session cookie has expired, so today's scan found nothing.\n\n"
+        "Scans will keep coming up empty until it's replaced:\n"
+        "  1. Open instagram.com in a browser and make sure you're logged in.\n"
+        "  2. DevTools (F12) → Application → Cookies → https://www.instagram.com\n"
+        "  3. Copy the value of the cookie named 'sessionid'.\n"
+        "  4. Paste it into the app's Settings page and save.\n\n"
+        "Don't log out of Instagram afterwards — that kills the cookie again."
+    )
+    _send("⚠️ Instagram session expired — scans are blind", body)
+
+
 def notify_scheduler_error(error: str) -> None:
     body = (
         f"The daily check scheduler encountered an unexpected error:\n\n{error}\n\n"

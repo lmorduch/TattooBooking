@@ -120,6 +120,12 @@ def check_all_artists(
                             "post_url": post["post_url"],
                             "caption_snippet": post["caption"][:200],
                         })
+            except scraper.InstagramSessionExpired:
+                logger.error("Instagram session expired for user %s — notifying", uid)
+                notifier.notify_session_expired()
+                if emit:
+                    emit({"type": "error", "message": "Instagram session expired — paste a fresh sessionid in Settings"})
+                continue
             except requests.HTTPError as e:
                 status = e.response.status_code if e.response is not None else 0
                 if status == 429:

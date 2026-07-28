@@ -24,6 +24,11 @@ export default function SettingsPage({ user }: { user: User }) {
     },
   });
 
+  const disconnectMut = useMutation({
+    mutationFn: () => saveInstagramCreds(""),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
+  });
+
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
     saveMut.mutate();
@@ -50,49 +55,54 @@ export default function SettingsPage({ user }: { user: User }) {
       <div className="settings-section">
         <h2>Instagram Account</h2>
 
-        {user.has_instagram ? (
+        {user.has_instagram && (
           <div className="ig-connected">
             <span className="save-ok">✓ Connected as @{user.instagram_username}</span>
-            <button className="btn-sm" style={{ marginLeft: "1rem" }} onClick={() => saveMut.mutate()}>
+            <button
+              className="btn-sm"
+              style={{ marginLeft: "1rem" }}
+              onClick={() => disconnectMut.mutate()}
+              disabled={disconnectMut.isPending}
+            >
               Disconnect
             </button>
           </div>
-        ) : (
-          <>
-            <p className="hint">
-              Connect your Instagram account to import your following list. We use your browser
-              session — no password ever leaves your device.
-            </p>
-
-            <div className="cookie-steps">
-              <p className="step"><strong>1.</strong> Open <a href="https://www.instagram.com" target="_blank" rel="noreferrer">instagram.com</a> and log in.</p>
-              <p className="step"><strong>2.</strong> Open DevTools: <code>F12</code> (Windows) or <code>Cmd+Option+I</code> (Mac).</p>
-              <p className="step"><strong>3.</strong> Go to <strong>Application</strong> → <strong>Cookies</strong> → <strong>https://www.instagram.com</strong>.</p>
-              <p className="step"><strong>4.</strong> Find the cookie named <code>sessionid</code> and copy its <strong>Value</strong>.</p>
-              <p className="step"><strong>5.</strong> Paste it below:</p>
-            </div>
-
-            <form className="settings-form" onSubmit={handleSave}>
-              <label>
-                Session cookie value
-                <input
-                  value={cookie}
-                  onChange={(e) => setCookie(e.target.value)}
-                  placeholder="Paste sessionid value here"
-                  autoComplete="off"
-                />
-              </label>
-              <button type="submit" disabled={saveMut.isPending || !cookie.trim()}>
-                {saveMut.isPending ? "Verifying…" : "Connect Instagram"}
-              </button>
-              {saveMut.isError && (
-                <span className="error-msg">
-                  {(saveMut.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Invalid or expired session cookie"}
-                </span>
-              )}
-            </form>
-          </>
         )}
+
+        <p className="hint">
+          {user.has_instagram
+            ? "Instagram sessions expire every few weeks. When they do, scans quietly find nothing — paste a fresh cookie below to fix it."
+            : "Connect your Instagram account to import your following list. We use your browser session — no password ever leaves your device."}
+        </p>
+
+        <div className="cookie-steps">
+          <p className="step"><strong>1.</strong> Open <a href="https://www.instagram.com" target="_blank" rel="noreferrer">instagram.com</a> and log in.</p>
+          <p className="step"><strong>2.</strong> Open DevTools: <code>F12</code> (Windows) or <code>Cmd+Option+I</code> (Mac).</p>
+          <p className="step"><strong>3.</strong> Go to <strong>Application</strong> → <strong>Cookies</strong> → <strong>https://www.instagram.com</strong>.</p>
+          <p className="step"><strong>4.</strong> Find the cookie named <code>sessionid</code> and copy its <strong>Value</strong>.</p>
+          <p className="step"><strong>5.</strong> Paste it below:</p>
+        </div>
+
+        <form className="settings-form" onSubmit={handleSave}>
+          <label>
+            Session cookie value
+            <input
+              value={cookie}
+              onChange={(e) => setCookie(e.target.value)}
+              placeholder="Paste sessionid value here"
+              autoComplete="off"
+            />
+          </label>
+          <button type="submit" disabled={saveMut.isPending || !cookie.trim()}>
+            {saveMut.isPending ? "Verifying…" : user.has_instagram ? "Update cookie" : "Connect Instagram"}
+          </button>
+          {saveMut.isSuccess && <span className="save-ok">✓ Saved</span>}
+          {saveMut.isError && (
+            <span className="error-msg">
+              {(saveMut.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Invalid or expired session cookie"}
+            </span>
+          )}
+        </form>
       </div>
 
       {user.has_instagram && (

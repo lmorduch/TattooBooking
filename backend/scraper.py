@@ -14,6 +14,11 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+
+class InstagramSessionExpired(Exception):
+    """Raised when Instagram serves a logged-out page — the sessionid needs replacing."""
+
+
 KEYWORDS = [
     "books open",
     "booking open",
@@ -264,11 +269,14 @@ def iter_timeline_posts(session_cookie: str, hours_back: int = 48, status_cb=Non
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
     q: queue.Queue = queue.Queue()
 
+    error: list[Exception] = []
+
     def _run():
         try:
             _fetch_following_posts_sync(session_cookie, cutoff, status_cb=status_cb, post_cb=q.put)
         except Exception as e:
             logger.error("Playwright thread error: %s", e)
+            error.append(e)
         finally:
             q.put(None)  # sentinel
 
@@ -279,6 +287,9 @@ def iter_timeline_posts(session_cookie: str, hours_back: int = 48, status_cb=Non
         if post is None:
             break
         yield post
+
+    if error:
+        raise error[0]
 
 
 def _fetch_following_posts_sync(session_cookie: str, cutoff, status_cb=None, post_cb=None) -> None:
@@ -368,6 +379,20 @@ def _fetch_following_posts_sync(session_cookie: str, cutoff, status_cb=None, pos
         page.wait_for_timeout(3000)
         title = page.title()
         status(f"Page loaded: {title!r} — {total_count[0]} posts so far")
+
+        # A dead sessionid doesn't error — Instagram just serves the logged-out page,
+        # which has no posts. Without this check the scan "succeeds" with 0 results.
+        landed_on_login = "/accounts/login" in page.url
+        if not landed_on_login:
+            try:
+                landed_on_login = page.locator('input[name="username"]').count() > 0
+            except Exception:
+                pass
+        if landed_on_login:
+            browser.close()
+            raise InstagramSessionExpired(
+                "Instagram redirected to the login page — the saved sessionid is no longer valid."
+            )
 
         prev_count = 0
         stall_count = 0
