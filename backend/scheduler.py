@@ -35,6 +35,28 @@ class _EmitLogHandler(logging.Handler):
             pass
 
 
+def _record_scan_run(db: Session, user_id: int, posts_scanned: int, status: str) -> int:
+    """Records one scan run; returns how many consecutive runs have now come back empty."""
+    db.add(models.ScanRun(user_id=user_id, posts_scanned=posts_scanned, status=status))
+    db.commit()
+    if status != "empty":
+        return 0
+
+    streak = 0
+    recent = (
+        db.query(models.ScanRun)
+        .filter_by(user_id=user_id)
+        .order_by(models.ScanRun.id.desc())
+        .limit(60)
+        .all()
+    )
+    for run in recent:
+        if run.status != "empty":
+            break
+        streak += 1
+    return streak
+
+
 def check_all_artists(
     emit: Callable[[dict], None] | None = None,
     user_id_filter: int | None = None,
@@ -133,6 +155,23 @@ def check_all_artists(
                         emit({"type": "error", "message": "Instagram rate limited the timeline feed — try again later"})
                     return
                 raise
+
+            # Zero posts across every artist being tracked is never a real day — it means
+            # the scan is broken (dead cookie, Instagram change, block), not that nobody
+            # posted. Bail out before writing 'ok' over everyone's status, and shout.
+            if posts_scanned == 0:
+                streak = _record_scan_run(db, uid, 0, "empty")
+                logger.error("Scan for user %s collected 0 posts (%d scan(s) running)", uid, streak)
+                if streak == 1 or streak % 7 == 0:
+                    notifier.notify_zero_posts(streak)
+                if emit:
+                    emit({
+                        "type": "error",
+                        "message": "Scan found 0 posts — the Instagram session is probably dead. Paste a fresh sessionid in Settings.",
+                    })
+                continue
+
+            _record_scan_run(db, uid, posts_scanned, "ok")
 
             now = datetime.now(timezone.utc).replace(tzinfo=None)
             done = 0
