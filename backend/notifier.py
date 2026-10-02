@@ -75,6 +75,29 @@ def notify_session_expired() -> None:
     _send("⚠️ Instagram session expired — scans are blind", body)
 
 
+def notify_zero_posts(consecutive: int) -> None:
+    opening = (
+        "Today's scan came back with 0 posts across every artist you follow."
+        if consecutive == 1
+        else f"The last {consecutive} scans have all come back with 0 posts."
+    )
+    body = (
+        f"{opening}\n\n"
+        "That is never a real result — it means the scan is broken, not that nobody posted.\n\n"
+        "Usual cause is an expired Instagram session cookie:\n"
+        "  1. Open instagram.com in a browser and make sure you're logged in.\n"
+        "  2. DevTools (F12) → Application → Cookies → https://www.instagram.com\n"
+        "  3. Copy the value of the cookie named 'sessionid'.\n"
+        "  4. Paste it into the app's Settings page and save.\n"
+        "  5. Hit 'Check now' and confirm posts come through.\n\n"
+        "Don't log out of Instagram afterwards — that kills the cookie again.\n\n"
+        "If a fresh cookie doesn't fix it, Instagram likely changed something and the "
+        "scraper needs work. The scan-cron logs on Railway record the final URL and "
+        "whether a login form was showing."
+    )
+    _send("⚠️ Tattoo tracker is blind — 0 posts scanned", body)
+
+
 def notify_scheduler_error(error: str) -> None:
     body = (
         f"The daily check scheduler encountered an unexpected error:\n\n{error}\n\n"

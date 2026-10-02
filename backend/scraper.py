@@ -410,6 +410,20 @@ def _fetch_following_posts_sync(session_cookie: str, cutoff, status_cb=None, pos
             prev_count = total_count[0]
 
         status(f"Done — {total_count[0]} posts collected")
+
+        if total_count[0] == 0:
+            # The July session-expiry check guessed wrong about what a dead cookie looks
+            # like, and the scan stayed silently blind for a month. Record what the page
+            # actually was so the next failure is diagnosable from the logs alone.
+            try:
+                login_form = page.locator('input[name="username"]').count() > 0
+            except Exception:
+                login_form = None
+            logger.error(
+                "Playwright: 0 posts — final_url=%s title=%r login_form=%s",
+                page.url, title, login_form,
+            )
+
         browser.close()
 
 

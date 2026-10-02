@@ -1,5 +1,5 @@
 # ABOUTME: SQLAlchemy ORM models for users, tracked artists, and check results.
-# ABOUTME: Entities: User, Artist, CheckResult.
+# ABOUTME: Entities: User, Artist, CheckResult, ScanRun.
 
 from datetime import datetime
 
@@ -62,3 +62,17 @@ class CheckResult(Base):
     notified: Mapped[bool] = mapped_column(Boolean, default=False)
 
     artist: Mapped["Artist"] = relationship("Artist", back_populates="check_results")
+
+
+class ScanRun(Base):
+    """One execution of the timeline scan. Exists so a run that quietly finds
+    nothing can be distinguished from a run that genuinely had nothing to find."""
+
+    __tablename__ = "scan_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    ran_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    posts_scanned: Mapped[int] = mapped_column(Integer, default=0)
+    # 'ok' | 'empty'
+    status: Mapped[str] = mapped_column(String, nullable=False)
