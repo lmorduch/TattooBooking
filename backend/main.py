@@ -20,22 +20,9 @@ import scheduler
 from config import settings
 from auth import COOKIE_NAME, FRONTEND_URL, exchange_code, get_current_user, login_url, make_jwt
 from crypto import decrypt, encrypt
-from database import Base, engine, get_db
+from database import get_db
+from migrations import run_migrations
 from routers import artists
-
-def _run_migrations() -> None:
-    from sqlalchemy import text
-    Base.metadata.create_all(bind=engine)
-    with engine.connect() as conn:
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_username VARCHAR"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_password VARCHAR"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_session_cookie VARCHAR"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_user_agent VARCHAR"))
-        conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS instagram_user_id VARCHAR"))
-        conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS last_post_url VARCHAR"))
-        conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS last_post_at TIMESTAMP"))
-        conn.execute(text("ALTER TABLE check_results ADD COLUMN IF NOT EXISTS notified BOOLEAN DEFAULT FALSE"))
-        conn.commit()
 
 
 @asynccontextmanager
@@ -43,7 +30,7 @@ async def lifespan(app: FastAPI):
     import threading
     # Run DB migration in background so uvicorn can start serving /health immediately.
     # On existing deployments these are all IF NOT EXISTS no-ops and complete in milliseconds.
-    threading.Thread(target=_run_migrations, daemon=True).start()
+    threading.Thread(target=run_migrations, daemon=True).start()
     # Scans run from the Railway cron service (run_scan.py); the in-app
     # scheduler is off in prod so the web service can sleep when idle.
     if settings.scheduler_enabled:

@@ -62,40 +62,23 @@ def notify_scan_complete(total_posts: int, hits_by_handle: dict, scanned_to: str
     _send(subject, "\n".join(lines))
 
 
-def notify_session_expired() -> None:
-    body = (
-        "The saved Instagram session cookie has expired, so today's scan found nothing.\n\n"
-        "Scans will keep coming up empty until it's replaced:\n"
-        "  1. Open instagram.com in a browser and make sure you're logged in.\n"
-        "  2. DevTools (F12) → Application → Cookies → https://www.instagram.com\n"
-        "  3. Copy the value of the cookie named 'sessionid'.\n"
-        "  4. Paste it into the app's Settings page and save.\n\n"
-        "Don't log out of Instagram afterwards — that kills the cookie again."
-    )
-    _send("⚠️ Instagram session expired — scans are blind", body)
-
-
-def notify_zero_posts(consecutive: int) -> None:
+def notify_scan_blind(consecutive: int, summary: str) -> None:
     opening = (
-        "Today's scan came back with 0 posts across every artist you follow."
+        "Today's scan could not read most of the profiles it tried."
         if consecutive == 1
-        else f"The last {consecutive} scans have all come back with 0 posts."
+        else f"The last {consecutive} scans have all been unable to read most profiles."
     )
     body = (
         f"{opening}\n\n"
-        "That is never a real result — it means the scan is broken, not that nobody posted.\n\n"
-        "Usual cause is an expired Instagram session cookie:\n"
-        "  1. Open instagram.com in a browser and make sure you're logged in.\n"
-        "  2. DevTools (F12) → Application → Cookies → https://www.instagram.com\n"
-        "  3. Copy the value of the cookie named 'sessionid'.\n"
-        "  4. Paste it into the app's Settings page and save.\n"
-        "  5. Hit 'Check now' and confirm posts come through.\n\n"
-        "Don't log out of Instagram afterwards — that kills the cookie again.\n\n"
-        "If a fresh cookie doesn't fix it, Instagram likely changed something and the "
-        "scraper needs work. The scan-cron logs on Railway record the final URL and "
-        "whether a login form was showing."
+        f"{summary}\n\n"
+        "The scan reads public profiles without logging in, so no Instagram account or cookie is "
+        "involved. Likely causes: Instagram is blocking or rate-limiting the scan's IP, or the "
+        "profile page layout changed and the scraper no longer recognises it.\n\n"
+        "Posts the scan couldn't see are picked up the next time it works, as long as they're "
+        "still among the latest 12 on a profile.\n\n"
+        "See the scan-cron logs on Railway (look for 'SCAN SUMMARY' and 'outcome=') and come tell Claude to fix it."
     )
-    _send("⚠️ Tattoo tracker is blind — 0 posts scanned", body)
+    _send("⚠️ Tattoo tracker is blind — scan could not read profiles", body)
 
 
 def notify_scheduler_error(error: str) -> None:

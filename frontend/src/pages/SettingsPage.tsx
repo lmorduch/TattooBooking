@@ -71,8 +71,8 @@ export default function SettingsPage({ user }: { user: User }) {
 
         <p className="hint">
           {user.has_instagram
-            ? "Instagram sessions expire every few weeks. When they do, scans quietly find nothing — paste a fresh cookie below to fix it."
-            : "Connect your Instagram account to import your following list. We use your browser session — no password ever leaves your device."}
+            ? "Only used to import your following list. Daily scans read public profiles and never log in, so an expired cookie doesn't affect them."
+            : "Connect your Instagram account to import your following list. Daily scans don't need this — they read public profiles without logging in."}
         </p>
 
         <div className="cookie-steps">
